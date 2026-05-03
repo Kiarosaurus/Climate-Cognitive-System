@@ -50,41 +50,24 @@ function decodeUser(token: string): User | null {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(
-    () => localStorage.getItem('token'),
+    () => sessionStorage.getItem('token'),
   )
   const [user, setUser] = useState<User | null>(() => {
-    const t = localStorage.getItem('token')
+    const t = sessionStorage.getItem('token')
     return t ? decodeUser(t) : null
   })
 
   // ── Axios interceptors ────────────────────────────────────────────────────
 
   useEffect(() => {
-    // Inject Bearer token on every request
+    // Inject Bearer token on every outgoing request
     const reqId = api.interceptors.request.use(config => {
-      const t = localStorage.getItem('token')
+      const t = sessionStorage.getItem('token')
       if (t) config.headers.Authorization = `Bearer ${t}`
       return config
     })
-
-    // Auto-logout on 401 (expired or invalid token)
-    const resId = api.interceptors.response.use(
-      res => res,
-      err => {
-        if (err.response?.status === 401) {
-          localStorage.removeItem('token')
-          setToken(null)
-          setUser(null)
-          window.location.href = '/login'
-        }
-        return Promise.reject(err)
-      },
-    )
-
-    return () => {
-      api.interceptors.request.eject(reqId)
-      api.interceptors.response.eject(resId)
-    }
+    // 401 handling (redirect + token clear) lives in api/client.ts
+    return () => { api.interceptors.request.eject(reqId) }
   }, [])
 
   // ── Actions ───────────────────────────────────────────────────────────────
@@ -98,13 +81,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     )
     const decoded = decodeUser(data.access_token)
     if (!decoded) throw new Error('Token inválido recibido del servidor')
-    localStorage.setItem('token', data.access_token)
+    sessionStorage.setItem('token', data.access_token)
     setToken(data.access_token)
     setUser(decoded)
   }, [])
 
   const logout = useCallback(() => {
-    localStorage.removeItem('token')
+    sessionStorage.removeItem('token')
     setToken(null)
     setUser(null)
   }, [])

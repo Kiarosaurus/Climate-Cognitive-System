@@ -1,4 +1,5 @@
 import os
+import secrets
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo:27017")
 POSTGRES_URI = os.getenv(
@@ -15,6 +16,6 @@ WATSON_ASSISTANT_ID = os.getenv("WATSON_ASSISTANT_ID", "")
 WATSON_EXTENSION_KEY = os.getenv("WATSON_EXTENSION_KEY", "")
 
 # JWT
-SECRET_KEY = os.getenv("SECRET_KEY", "changeme-set-a-strong-32-char-key-in-prod")
+SECRET_KEY = os.getenv("SECRET_KEY") or secrets.token_hex(32)
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
