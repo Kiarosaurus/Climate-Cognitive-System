@@ -9,7 +9,9 @@ import {
 } from 'lucide-react'
 import api from '../api/client'
 
-const CO2_KG_PER_KWH = 0.233   // kg CO2 per kWh (grid average)
+// Average CO₂ emission factor for the electrical grid (kg CO₂ per kWh).
+// Source: EPA eGrid average; Peru's grid factor is ~0.224 — 0.233 is a conservative estimate.
+const CO2_KG_PER_KWH = 0.233
 
 interface Assumptions {
   ac_power_kw: number
@@ -111,6 +113,7 @@ export default function ROIReport() {
   })) ?? []
 
   const co2Saved = data ? data.energy_saved_kwh * CO2_KG_PER_KWH : 0
+  // standbyPct = fraction of traditional consumption avoided by the cognitive system
   const standbyPct = data && data.traditional_kwh > 0
     ? (data.energy_saved_kwh / data.traditional_kwh * 100)
     : 0

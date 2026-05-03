@@ -72,7 +72,12 @@ async def startup_db():
 
 
 def _run_migrations(engine, text):
-    """Add columns introduced in the enterprise rewrite that create_all won't back-fill."""
+    """Apply schema migrations that SQLAlchemy's create_all cannot handle.
+
+    create_all() only creates missing tables; it never alters existing ones.
+    Each statement here is idempotent (IF NOT EXISTS / DO $$ ... IF condition $$)
+    so re-running on a live database is safe.
+    """
     migrations = [
         # users: status column (pending | active | inactive)
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR NOT NULL DEFAULT 'active'",
@@ -117,7 +122,12 @@ def _run_migrations(engine, text):
 
 
 def _seed_admin(SessionLocal):
-    """Ensure admin user exists with a valid argon2 password hash."""
+    """Ensure the default admin account exists with a valid Argon2 password hash.
+
+    On every startup the hash is force-updated so that passlib→pwdlib migrations
+    or manual hash resets in the DB are self-healing. In production, change the
+    default password immediately after first login.
+    """
     logger.info("_seed_admin: starting.")
     db = SessionLocal()
     try:

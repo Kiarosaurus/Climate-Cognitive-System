@@ -1,3 +1,18 @@
+"""
+ROI Report endpoint — Energy savings calculator.
+
+Methodology:
+  - Fetches last 7 days of sensor readings from MongoDB.
+  - Groups readings by calendar date.
+  - Estimates the time interval between readings from the actual data span.
+  - Traditional consumption: assumes AC ON for 100% of operational time.
+  - Cognitive consumption: counts only readings where cognitive_action.ac_status == 'ON'.
+  - Savings = (traditional_kwh − cognitive_kwh) expressed in kWh and USD.
+  - If fewer than 2 real readings exist, returns a clearly-flagged synthetic simulation
+    based on standard classroom assumptions (8 h/day, 60% standby rate).
+
+Access: admin role only (RBAC enforced inside the endpoint).
+"""
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -13,9 +28,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-AC_POWER_KW        = 2.5    # assumed power draw of one AC unit
-COST_PER_KWH       = 0.15   # USD per kWh
-DEFAULT_INTERVAL_H = 5 / 60 # 5-minute sampling interval fallback
+AC_POWER_KW        = 2.5    # assumed power draw of one AC unit (kW)
+COST_PER_KWH       = 0.15   # energy tariff (USD per kWh)
+DEFAULT_INTERVAL_H = 5 / 60 # fallback interval when span cannot be estimated
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -31,7 +46,12 @@ def _parse_ts(ts: str) -> datetime:
 
 
 def _simulate_roi() -> dict:
-    """Synthetic ROI for demos when real data is insufficient (< 2 readings)."""
+    """Return synthetic ROI projection for demo / early-deployment environments.
+
+    Assumes standard classroom profile: 8 operational hours per day, with the
+    cognitive system keeping the AC in STANDBY 60% of that time.
+    Response includes 'simulated: true' so the frontend renders the amber banner.
+    """
     today = datetime.utcnow().date()
     trend_data = []
     total_traditional = total_cognitive = 0.0

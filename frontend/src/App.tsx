@@ -13,11 +13,13 @@ import AddDevices from './views/AddDevices'
 import ROIReport from './views/ROIReport'
 import Register from './views/Register'
 
+/** Redirects unauthenticated users to /login. Wraps all dashboard routes. */
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { token } = useAuth()
   return token ? <>{children}</> : <Navigate to="/login" replace />
 }
 
+/** RBAC gate: allows only users with role='admin'. Others land on the dashboard. */
 function AdminRoute({ children }: { children: ReactNode }) {
   const { user, token } = useAuth()
   if (!token) return <Navigate to="/login" replace />
@@ -25,6 +27,7 @@ function AdminRoute({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
+/** RBAC gate: allows admin + collaborator. Guests are redirected to the dashboard. */
 function CollaboratorRoute({ children }: { children: ReactNode }) {
   const { user, token } = useAuth()
   if (!token) return <Navigate to="/login" replace />

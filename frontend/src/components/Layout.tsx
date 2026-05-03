@@ -32,6 +32,7 @@ export default function Layout() {
     navigate('/login', { replace: true })
   }
 
+  // Items without a 'roles' list are visible to all authenticated users.
   const visible = NAV.filter(n => !n.roles || n.roles.includes(user?.role ?? ''))
 
   return (

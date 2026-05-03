@@ -235,6 +235,13 @@ def provision_sensor(
     db: Session = Depends(get_db_sql),
     current_user: User = Depends(get_current_user),
 ):
+    """Register a new physical sensor and assign it to a room.
+
+    Security rule: regardless of the request payload, is_active and
+    control_enabled are always forced to False. The admin must explicitly
+    enable the sensor from the room dashboard after physical installation,
+    preventing unintended AC control from sensors that are not yet calibrated.
+    """
     _require_admin(current_user)
     if not db.query(Room).filter(Room.id == payload.room_id).first():
         raise HTTPException(status_code=404, detail=f"Room id='{payload.room_id}' not found.")
@@ -282,6 +289,12 @@ def update_user_status(
     db: Session = Depends(get_db_sql),
     current_user: User = Depends(get_current_user),
 ):
+    """Change a user's account status (pending → active → inactive).
+
+    Self-modification is blocked (HTTP 400) to prevent an admin from accidentally
+    locking themselves out. Status values are validated against the STATUSES set
+    defined in models/admin.py.
+    """
     _require_admin(current_user)
     if current_user.id == user_id:
         raise HTTPException(
