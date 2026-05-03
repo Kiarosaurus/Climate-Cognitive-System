@@ -30,23 +30,26 @@ def init_watson() -> None:
 # ── sync helpers (run in threadpool) ─────────────────────────────────────────
 
 def _create_session_sync() -> str:
-    result = _client.create_session(assistant_id=WATSON_ASSISTANT_ID).get_result()
+    result = _client.create_session(
+        assistant_id=WATSON_ASSISTANT_ID,
+        environment_id=WATSON_ASSISTANT_ID,
+    ).get_result()
     return result["session_id"]
 
 
 def _send_message_sync(session_id: str, text: str) -> str:
-    from ibm_watson.assistant_v2 import MessageInput
-
     response = _client.message(
         assistant_id=WATSON_ASSISTANT_ID,
+        environment_id=WATSON_ASSISTANT_ID,
         session_id=session_id,
-        input=MessageInput(message_type="text", text=text),
+        input={"message_type": "text", "text": text},
+        user_id="ccs_admin_local",
     ).get_result()
 
     generics = response.get("output", {}).get("generic", [])
-    return " ".join(
-        g["text"] for g in generics if g.get("response_type") == "text" and g.get("text")
-    )
+    if generics and generics[0].get("response_type") == "text":
+        return generics[0].get("text")
+    return "No hubo respuesta de Watson."
 
 
 # ── public async API ──────────────────────────────────────────────────────────
