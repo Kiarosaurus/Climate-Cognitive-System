@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from fastapi import FastAPI
-from app.routes import sensors, admin
+from app.routes import sensors, admin, chat
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,6 +18,13 @@ app = FastAPI(
 
 app.include_router(sensors.router, prefix="/api/v1/sensors", tags=["sensors"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
+app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"])
+
+
+@app.on_event("startup")
+async def startup_watson():
+    from app.services.watson_service import init_watson
+    init_watson()
 
 
 @app.on_event("startup")

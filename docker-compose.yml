@@ -9,6 +9,9 @@ services:
     environment:
       - MONGO_URI=mongodb://mongo:27017
       - POSTGRES_URI=postgresql://postgres:postgres@postgres:5432/climate_db
+      - WATSON_API_KEY=${WATSON_API_KEY}
+      - WATSON_URL=${WATSON_URL}
+      - WATSON_ASSISTANT_ID=${WATSON_ASSISTANT_ID}
     depends_on:
       mongo:
         condition: service_started
