@@ -1,0 +1,50 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    container_name: ccs_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017
+      - POSTGRES_URI=postgresql://postgres:postgres@postgres:5432/climate_db
+    depends_on:
+      - mongo
+      - postgres
+    volumes:
+      - ./backend:/app
+
+  simulator:
+    build: ./simulator
+    container_name: ccs_simulator
+    environment:
+      - API_URL=http://backend:8000
+    depends_on:
+      - backend
+
+  mongo:
+    image: mongo:6.0
+    container_name: ccs_mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./database/mongo/init.js:/docker-entrypoint-initdb.d/init.js
+
+  postgres:
+    image: postgres:15
+    container_name: ccs_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: climate_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+volumes:
+  mongo_data:
+  postgres_data:
