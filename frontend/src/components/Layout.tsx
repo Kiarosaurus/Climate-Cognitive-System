@@ -4,6 +4,7 @@ import {
   Users, LogOut, Thermometer, ChevronRight, HardDrive,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import FloatingChat from './FloatingChat'
 
 interface NavItem {
   to: string
@@ -105,6 +106,8 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+
+      <FloatingChat />
     </div>
   )
 }
