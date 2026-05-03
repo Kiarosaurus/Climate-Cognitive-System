@@ -22,7 +22,7 @@ class User(Base):
 class Room(Base):
     __tablename__ = "rooms"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
     max_capacity = Column(Integer, nullable=False)
     target_temp = Column(Float, nullable=False)
@@ -36,7 +36,7 @@ class Schedule(Base):
     __tablename__ = "schedules"
 
     id = Column(Integer, primary_key=True, index=True)
-    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
+    room_id = Column(String, ForeignKey("rooms.id"), nullable=False)
     day_of_week = Column(Integer, nullable=False)  # 0=Monday … 6=Sunday
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
@@ -49,7 +49,7 @@ class SensorDevice(Base):
     __tablename__ = "sensor_devices"
 
     id = Column(String, primary_key=True)           # "sensor-001" — matches incoming sensor_id
-    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
+    room_id = Column(String, ForeignKey("rooms.id"), nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
     control_enabled = Column(Boolean, nullable=False, default=True)
 
@@ -60,7 +60,7 @@ class Reservation(Base):
     __tablename__ = "reservations"
 
     id = Column(Integer, primary_key=True, index=True)
-    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
+    room_id = Column(String, ForeignKey("rooms.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     start_time = Column(DateTime, nullable=False)
     end_time = Column(DateTime, nullable=False)

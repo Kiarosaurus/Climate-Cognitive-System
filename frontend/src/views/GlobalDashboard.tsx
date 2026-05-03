@@ -5,7 +5,7 @@ import {
 } from 'recharts'
 import {
   Thermometer, Droplets, Wind, AlertTriangle,
-  CheckCircle, RefreshCw, Send, Zap, ZapOff, Clock,
+  CheckCircle, RefreshCw, Send, Zap, ZapOff, Clock, FlaskConical,
 } from 'lucide-react'
 import axios from 'axios'
 import api from '../api/client'
@@ -223,36 +223,75 @@ export default function GlobalDashboard() {
           )}
       </div>
 
-      {/* Send form */}
-      <div className="bg-slate-800 rounded-xl p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-slate-300 text-sm font-semibold uppercase tracking-wide">Enviar Lectura Manual</h2>
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <span className="text-xs text-slate-400">Auto-simular (4s)</span>
-            <div onClick={() => setAutoMode(v => !v)} className={`w-10 h-5 rounded-full transition-colors relative ${autoMode ? 'bg-blue-600' : 'bg-slate-600'}`}>
-              <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${autoMode ? 'translate-x-5' : 'translate-x-0.5'}`} />
-            </div>
-          </label>
+      {/* Dev tools — synthetic data generator */}
+      <div className="border-2 border-dashed border-amber-600/40 bg-amber-950/10 rounded-xl overflow-hidden">
+        {/* Banner */}
+        <div className="flex items-center gap-2 bg-amber-900/25 border-b border-amber-600/30 px-4 py-2.5">
+          <FlaskConical size={15} className="text-amber-400 shrink-0" />
+          <span className="text-xs font-semibold text-amber-300 uppercase tracking-wider">
+            Herramientas de Desarrollador · Generador de Datos Sintéticos
+          </span>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Sensor ID</label>
-            <select value={form.sensor_id} onChange={e => setForm(f => ({ ...f, sensor_id: e.target.value }))} className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500">
-              {SENSOR_IDS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+
+        <div className="p-5">
+          <p className="text-xs text-amber-500/80 mb-5">
+            Esta zona es exclusiva para pruebas. Los datos enviados aquí simulan lecturas de sensores
+            reales y permiten observar la reacción del modelo de Inteligencia Artificial cognitivo
+            sin necesidad de hardware físico.
+          </p>
+
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-slate-400 text-xs font-semibold uppercase tracking-wide">
+              Enviar Lectura Manual
+            </h2>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <span className="text-xs text-slate-400">Auto-simular (4s)</span>
+              <div
+                onClick={() => setAutoMode(v => !v)}
+                className={`w-10 h-5 rounded-full transition-colors relative ${autoMode ? 'bg-amber-600' : 'bg-slate-600'}`}
+              >
+                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${autoMode ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              </div>
+            </label>
           </div>
-          {(['temperature', 'humidity', 'co2_ppm'] as const).map(field => (
-            <div key={field}>
-              <label className="block text-xs text-slate-400 mb-1">
-                {field === 'temperature' ? 'Temperatura (°C)' : field === 'humidity' ? 'Humedad (%)' : 'CO₂ (ppm)'}
-              </label>
-              <input type="number" step={field === 'co2_ppm' ? '1' : '0.1'} value={form[field]} onChange={e => setForm(f => ({ ...f, [field]: parseFloat(e.target.value) }))} className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500" />
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Sensor ID</label>
+              <select
+                value={form.sensor_id}
+                onChange={e => setForm(f => ({ ...f, sensor_id: e.target.value }))}
+                className="w-full bg-slate-700/70 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-amber-500"
+              >
+                {SENSOR_IDS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
             </div>
-          ))}
+            {(['temperature', 'humidity', 'co2_ppm'] as const).map(field => (
+              <div key={field}>
+                <label className="block text-xs text-slate-400 mb-1">
+                  {field === 'temperature' ? 'Temperatura (°C)' : field === 'humidity' ? 'Humedad (%)' : 'CO₂ (ppm)'}
+                </label>
+                <input
+                  type="number"
+                  step={field === 'co2_ppm' ? '1' : '0.1'}
+                  value={form[field]}
+                  onChange={e => setForm(f => ({ ...f, [field]: parseFloat(e.target.value) }))}
+                  className="w-full bg-slate-700/70 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-amber-500"
+                />
+              </div>
+            ))}
+          </div>
+
+          <button
+            onClick={() => sendReading(form)}
+            disabled={sending || autoMode}
+            className="flex items-center gap-2 bg-amber-700 hover:bg-amber-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-sm font-semibold px-5 py-2 rounded-lg transition-colors"
+          >
+            {sending
+              ? <><RefreshCw size={14} className="animate-spin" /> Enviando…</>
+              : <><Send size={14} /> Enviar lectura de prueba</>}
+          </button>
         </div>
-        <button onClick={() => sendReading(form)} disabled={sending || autoMode} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-sm font-semibold px-5 py-2 rounded-lg transition-colors">
-          {sending ? <><RefreshCw size={14} className="animate-spin" /> Enviando…</> : <><Send size={14} /> Enviar lectura</>}
-        </button>
       </div>
     </div>
   )

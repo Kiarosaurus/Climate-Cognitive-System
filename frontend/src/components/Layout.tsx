@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Building2, Cpu, CalendarDays,
-  Users, LogOut, Thermometer, ChevronRight,
+  Users, LogOut, Thermometer, ChevronRight, HardDrive,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
@@ -16,8 +16,9 @@ const NAV: NavItem[] = [
   { to: '/',            label: 'Dashboard',   icon: <LayoutDashboard size={18} /> },
   { to: '/rooms',       label: 'Aulas',        icon: <Building2 size={18} /> },
   { to: '/sensors',     label: 'Sensores',     icon: <Cpu size={18} />, roles: ['admin'] },
-  { to: '/reservations',label: 'Reservas',     icon: <CalendarDays size={18} /> },
-  { to: '/admin/users', label: 'Usuarios',     icon: <Users size={18} />, roles: ['admin'] },
+  { to: '/reservations',label: 'Reservas',     icon: <CalendarDays size={18} />, roles: ['admin', 'collaborator'] },
+  { to: '/admin/users',  label: 'Usuarios',    icon: <Users size={18} />,    roles: ['admin'] },
+  { to: '/add-devices',  label: 'Dispositivos', icon: <HardDrive size={18} />, roles: ['admin'] },
 ]
 
 export default function Layout() {

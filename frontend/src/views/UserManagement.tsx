@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Users, RefreshCw, AlertCircle, CheckCircle, XCircle, ShieldCheck } from 'lucide-react'
 import api from '../api/client'
+import { useAuth } from '../context/AuthContext'
 
 interface UserRow {
   user_id: number
@@ -24,6 +25,7 @@ const ROLE_COLORS: Record<string, string> = {
 }
 
 export default function UserManagement() {
+  const { user: currentUser } = useAuth()
   const [users, setUsers] = useState<UserRow[]>([])
   const [tab, setTab] = useState<Tab>('pending')
   const [loading, setLoading] = useState(true)
@@ -126,69 +128,88 @@ export default function UserManagement() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(u => (
-                <tr key={u.user_id} className="border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-full bg-blue-600/20 border border-blue-500/20 flex items-center justify-center text-xs font-bold text-blue-300">
-                        {u.username[0].toUpperCase()}
+              {filtered.map(u => {
+                const isSelf = u.username === currentUser?.username
+                return (
+                  <tr key={u.user_id} className={`border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors ${isSelf ? 'bg-blue-950/20' : ''}`}>
+                    {/* Username */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-blue-600/20 border border-blue-500/20 flex items-center justify-center text-xs font-bold text-blue-300">
+                          {u.username[0].toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-200 flex items-center gap-1.5">
+                            {u.username}
+                            {isSelf && (
+                              <span className="text-xs font-semibold text-blue-300 bg-blue-600/25 border border-blue-500/40 px-1.5 py-0.5 rounded-full leading-none">
+                                Tú
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-xs text-slate-500">ID #{u.user_id}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-medium text-slate-200">{u.username}</p>
-                        <p className="text-xs text-slate-500">ID #{u.user_id}</p>
+                    </td>
+
+                    {/* Role */}
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2 py-0.5 rounded font-medium capitalize ${ROLE_COLORS[u.role] ?? 'bg-slate-700 text-slate-300'}`}>
+                        {u.role}
+                      </span>
+                    </td>
+
+                    {/* Status */}
+                    <td className="px-4 py-3">
+                      <span className={`flex items-center gap-1 text-xs w-fit ${
+                        u.status === 'active' ? 'text-emerald-400' :
+                        u.status === 'pending' ? 'text-amber-400' : 'text-slate-500'
+                      }`}>
+                        {u.status === 'active' ? <CheckCircle size={12} /> : u.status === 'inactive' ? <XCircle size={12} /> : <RefreshCw size={12} />}
+                        {u.status}
+                      </span>
+                    </td>
+
+                    {/* Actions */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-2">
+                        {isSelf ? (
+                          <span className="text-xs text-slate-500 italic">Sin acciones</span>
+                        ) : actionLoading === u.user_id ? (
+                          <RefreshCw size={14} className="animate-spin text-slate-400" />
+                        ) : (
+                          <>
+                            {u.status !== 'active' && (
+                              <button
+                                onClick={() => setStatus(u.user_id, 'active')}
+                                className="flex items-center gap-1 text-xs bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded-lg transition-colors"
+                              >
+                                <CheckCircle size={12} /> Aprobar
+                              </button>
+                            )}
+                            {u.status !== 'inactive' && (
+                              <button
+                                onClick={() => setStatus(u.user_id, 'inactive')}
+                                className="flex items-center gap-1 text-xs bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-500/30 px-2.5 py-1 rounded-lg transition-colors"
+                              >
+                                <XCircle size={12} /> Rechazar
+                              </button>
+                            )}
+                            {u.status === 'inactive' && (
+                              <button
+                                onClick={() => setStatus(u.user_id, 'pending')}
+                                className="flex items-center gap-1 text-xs bg-amber-900/30 hover:bg-amber-900/50 text-amber-400 border border-amber-500/30 px-2.5 py-1 rounded-lg transition-colors"
+                              >
+                                <RefreshCw size={12} /> Reingresar
+                              </button>
+                            )}
+                          </>
+                        )}
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-0.5 rounded font-medium capitalize ${ROLE_COLORS[u.role] ?? 'bg-slate-700 text-slate-300'}`}>
-                      {u.role}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`flex items-center gap-1 text-xs w-fit ${
-                      u.status === 'active' ? 'text-emerald-400' :
-                      u.status === 'pending' ? 'text-amber-400' : 'text-slate-500'
-                    }`}>
-                      {u.status === 'active' ? <CheckCircle size={12} /> : u.status === 'inactive' ? <XCircle size={12} /> : <RefreshCw size={12} />}
-                      {u.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-2">
-                      {actionLoading === u.user_id ? (
-                        <RefreshCw size={14} className="animate-spin text-slate-400" />
-                      ) : (
-                        <>
-                          {u.status !== 'active' && (
-                            <button
-                              onClick={() => setStatus(u.user_id, 'active')}
-                              className="flex items-center gap-1 text-xs bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded-lg transition-colors"
-                            >
-                              <CheckCircle size={12} /> Aprobar
-                            </button>
-                          )}
-                          {u.status !== 'inactive' && (
-                            <button
-                              onClick={() => setStatus(u.user_id, 'inactive')}
-                              className="flex items-center gap-1 text-xs bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-500/30 px-2.5 py-1 rounded-lg transition-colors"
-                            >
-                              <XCircle size={12} /> Rechazar
-                            </button>
-                          )}
-                          {u.status === 'inactive' && (
-                            <button
-                              onClick={() => setStatus(u.user_id, 'pending')}
-                              className="flex items-center gap-1 text-xs bg-amber-900/30 hover:bg-amber-900/50 text-amber-400 border border-amber-500/30 px-2.5 py-1 rounded-lg transition-colors"
-                            >
-                              <RefreshCw size={12} /> Reingresar
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}

@@ -9,6 +9,7 @@ import RoomDetail from './views/RoomDetail'
 import SensorSearch from './views/SensorSearch'
 import Reservations from './views/Reservations'
 import UserManagement from './views/UserManagement'
+import AddDevices from './views/AddDevices'
 import Register from './views/Register'
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -20,6 +21,13 @@ function AdminRoute({ children }: { children: ReactNode }) {
   const { user, token } = useAuth()
   if (!token) return <Navigate to="/login" replace />
   if (user?.role !== 'admin') return <Navigate to="/" replace />
+  return <>{children}</>
+}
+
+function CollaboratorRoute({ children }: { children: ReactNode }) {
+  const { user, token } = useAuth()
+  if (!token) return <Navigate to="/login" replace />
+  if (user?.role === 'guest') return <Navigate to="/" replace />
   return <>{children}</>
 }
 
@@ -50,12 +58,27 @@ export default function App() {
               </AdminRoute>
             }
           />
-          <Route path="reservations" element={<Reservations />} />
+          <Route
+            path="reservations"
+            element={
+              <CollaboratorRoute>
+                <Reservations />
+              </CollaboratorRoute>
+            }
+          />
           <Route
             path="admin/users"
             element={
               <AdminRoute>
                 <UserManagement />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="add-devices"
+            element={
+              <AdminRoute>
+                <AddDevices />
               </AdminRoute>
             }
           />

@@ -77,6 +77,34 @@ def _run_migrations(engine, text):
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR NOT NULL DEFAULT 'active'",
         # users: ensure role column exists (it should, but guard against missing default)
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR NOT NULL DEFAULT 'guest'",
+        # rooms.id + related FK columns: INTEGER → VARCHAR (idempotent, runs only once)
+        """
+        DO $$
+        DECLARE
+            rooms_id_type text;
+        BEGIN
+            SELECT data_type INTO rooms_id_type
+            FROM information_schema.columns
+            WHERE table_name = 'rooms' AND column_name = 'id';
+
+            IF rooms_id_type = 'integer' THEN
+                ALTER TABLE schedules DROP CONSTRAINT IF EXISTS schedules_room_id_fkey;
+                ALTER TABLE sensor_devices DROP CONSTRAINT IF EXISTS sensor_devices_room_id_fkey;
+                ALTER TABLE reservations DROP CONSTRAINT IF EXISTS reservations_room_id_fkey;
+                ALTER TABLE rooms ALTER COLUMN id DROP DEFAULT;
+                ALTER TABLE rooms ALTER COLUMN id TYPE VARCHAR USING id::VARCHAR;
+                ALTER TABLE schedules ALTER COLUMN room_id TYPE VARCHAR USING room_id::VARCHAR;
+                ALTER TABLE sensor_devices ALTER COLUMN room_id TYPE VARCHAR USING room_id::VARCHAR;
+                ALTER TABLE reservations ALTER COLUMN room_id TYPE VARCHAR USING room_id::VARCHAR;
+                ALTER TABLE schedules ADD CONSTRAINT schedules_room_id_fkey
+                    FOREIGN KEY (room_id) REFERENCES rooms(id);
+                ALTER TABLE sensor_devices ADD CONSTRAINT sensor_devices_room_id_fkey
+                    FOREIGN KEY (room_id) REFERENCES rooms(id);
+                ALTER TABLE reservations ADD CONSTRAINT reservations_room_id_fkey
+                    FOREIGN KEY (room_id) REFERENCES rooms(id);
+            END IF;
+        END $$;
+        """,
     ]
     try:
         with engine.begin() as conn:

@@ -25,17 +25,30 @@ class ScheduleIn(BaseModel):
 
 
 class RoomIn(BaseModel):
+    id: str
     name: str
     max_capacity: int
     target_temp: float
     schedules: List[ScheduleIn] = []
 
 
+class RoomCreateIn(BaseModel):
+    id: str
+    name: str
+    max_capacity: int
+    target_temp: float
+
+
 class SensorDeviceIn(BaseModel):
     sensor_id: str
-    room_id: int
+    room_id: str
     is_active: bool = True
     control_enabled: bool = True
+
+
+class SensorCreateIn(BaseModel):
+    id: str
+    room_id: str
 
 
 class StatusPatch(BaseModel):
@@ -43,7 +56,7 @@ class StatusPatch(BaseModel):
 
 
 class ReservationIn(BaseModel):
-    room_id: int
+    room_id: str
     start_time: datetime
     end_time: datetime
     expected_occupancy: int
@@ -81,13 +94,42 @@ def list_rooms(
 
 @router.get("/rooms/{room_id}")
 def get_room(
-    room_id: int,
+    room_id: str,
     db: Session = Depends(get_db_sql),
     current_user: User = Depends(get_current_user),
 ):
     room = db.query(Room).filter(Room.id == room_id).first()
     if not room:
-        raise HTTPException(status_code=404, detail=f"Room id={room_id} not found.")
+        raise HTTPException(status_code=404, detail=f"Room id='{room_id}' not found.")
+    return {"id": room.id, "name": room.name, "max_capacity": room.max_capacity, "target_temp": room.target_temp}
+
+
+@router.post("/rooms", status_code=201)
+def create_room(
+    payload: RoomCreateIn,
+    db: Session = Depends(get_db_sql),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    if db.query(Room).filter(Room.id == payload.id).first():
+        raise HTTPException(status_code=409, detail=f"Room id='{payload.id}' already exists.")
+    if db.query(Room).filter(Room.name == payload.name).first():
+        raise HTTPException(status_code=409, detail=f"Room name='{payload.name}' already exists.")
+    room = Room(
+        id=payload.id,
+        name=payload.name,
+        max_capacity=payload.max_capacity,
+        target_temp=payload.target_temp,
+    )
+    db.add(room)
+    try:
+        db.commit()
+        db.refresh(room)
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.error("DB error creating room: %s", exc)
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+    logger.info("Admin '%s' created room '%s' (%s).", current_user.username, room.id, room.name)
     return {"id": room.id, "name": room.name, "max_capacity": room.max_capacity, "target_temp": room.target_temp}
 
 
@@ -104,6 +146,7 @@ def setup_room(
             room.target_temp = payload.target_temp
         else:
             room = Room(
+                id=payload.id,
                 name=payload.name,
                 max_capacity=payload.max_capacity,
                 target_temp=payload.target_temp,
@@ -186,6 +229,37 @@ def register_device(
     return {"sensor_id": device.id, "room_id": device.room_id, "is_active": device.is_active, "control_enabled": device.control_enabled}
 
 
+@router.post("/sensors", status_code=201)
+def provision_sensor(
+    payload: SensorCreateIn,
+    db: Session = Depends(get_db_sql),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    if not db.query(Room).filter(Room.id == payload.room_id).first():
+        raise HTTPException(status_code=404, detail=f"Room id='{payload.room_id}' not found.")
+    if db.query(SensorDevice).filter(SensorDevice.id == payload.id).first():
+        raise HTTPException(status_code=409, detail=f"Sensor id='{payload.id}' already exists.")
+    device = SensorDevice(
+        id=payload.id,
+        room_id=payload.room_id,
+        is_active=False,
+        control_enabled=False,
+    )
+    db.add(device)
+    try:
+        db.commit()
+        db.refresh(device)
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+    logger.info(
+        "Admin '%s' provisioned sensor '%s' → room '%s' (inactive/disabled).",
+        current_user.username, device.id, device.room_id,
+    )
+    return {"sensor_id": device.id, "room_id": device.room_id, "is_active": device.is_active, "control_enabled": device.control_enabled}
+
+
 # ── User management endpoints (admin-only) ────────────────────────────────────
 
 @router.get("/users")
@@ -209,6 +283,11 @@ def update_user_status(
     current_user: User = Depends(get_current_user),
 ):
     _require_admin(current_user)
+    if current_user.id == user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Un administrador no puede modificar su propio estado de cuenta o auto-rechazarse.",
+        )
     if payload.status not in STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {sorted(STATUSES)}")
     user = db.query(User).filter(User.id == user_id).first()
