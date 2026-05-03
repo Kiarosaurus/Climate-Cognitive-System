@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from fastapi import FastAPI, Depends
-from app.routes import sensors, admin, chat, auth
+from app.routes import sensors, admin, chat, auth, reports
 from app.dependencies import require_api_key
 
 logging.basicConfig(
@@ -23,8 +23,9 @@ app.include_router(
     tags=["sensors"],
     dependencies=[Depends(require_api_key)],
 )
-app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
-app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+app.include_router(admin.router,   prefix="/api/v1/admin",   tags=["admin"])
+app.include_router(reports.router, prefix="/api/v1/reports", tags=["reports"])
+app.include_router(auth.router,    prefix="/api/v1/auth",    tags=["auth"])
 app.include_router(
     chat.router,
     prefix="/api/v1/chat",

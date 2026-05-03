@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Building2, Cpu, CalendarDays,
-  Users, LogOut, Thermometer, ChevronRight, HardDrive,
+  Users, LogOut, Thermometer, ChevronRight, HardDrive, TrendingUp,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import FloatingChat from './FloatingChat'
@@ -19,7 +19,8 @@ const NAV: NavItem[] = [
   { to: '/sensors',     label: 'Sensores',     icon: <Cpu size={18} />, roles: ['admin'] },
   { to: '/reservations',label: 'Reservas',     icon: <CalendarDays size={18} />, roles: ['admin', 'collaborator'] },
   { to: '/admin/users',  label: 'Usuarios',    icon: <Users size={18} />,    roles: ['admin'] },
-  { to: '/add-devices',  label: 'Dispositivos', icon: <HardDrive size={18} />, roles: ['admin'] },
+  { to: '/add-devices',  label: 'Dispositivos',  icon: <HardDrive size={18} />,   roles: ['admin'] },
+  { to: '/roi',          label: 'Rentabilidad',  icon: <TrendingUp size={18} />,  roles: ['admin'] },
 ]
 
 export default function Layout() {

@@ -10,6 +10,7 @@ import SensorSearch from './views/SensorSearch'
 import Reservations from './views/Reservations'
 import UserManagement from './views/UserManagement'
 import AddDevices from './views/AddDevices'
+import ROIReport from './views/ROIReport'
 import Register from './views/Register'
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -79,6 +80,14 @@ export default function App() {
             element={
               <AdminRoute>
                 <AddDevices />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="roi"
+            element={
+              <AdminRoute>
+                <ROIReport />
               </AdminRoute>
             }
           />

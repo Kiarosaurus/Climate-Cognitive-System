@@ -57,9 +57,11 @@ def get_room_context(db_sql, sensor_id: str, reading_timestamp: datetime) -> dic
     }
 
 
-async def save_reading(db, reading: SensorReading) -> str:
+async def save_reading(db, reading: SensorReading, cognitive_action: dict | None = None) -> str:
     doc = reading.model_dump()
     doc["timestamp"] = reading.timestamp.isoformat()
+    if cognitive_action is not None:
+        doc["cognitive_action"] = cognitive_action
     result = await db["sensor_readings"].insert_one(doc)
     return str(result.inserted_id)
 
@@ -91,7 +93,7 @@ async def process_reading(db, reading: SensorReading, db_sql=None) -> dict:
             reading.temperature, room_context, reading.timestamp
         )
 
-    inserted_id = await save_reading(db, reading)
+    inserted_id = await save_reading(db, reading, cognitive_action=cognitive_action)
     logger.info(
         "Saved sensor_id=%s inserted_id=%s anomaly=%s room=%s ac=%s",
         reading.sensor_id, inserted_id, anomaly,
