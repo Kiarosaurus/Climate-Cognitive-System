@@ -21,6 +21,12 @@ app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
 
 
 @app.on_event("startup")
+async def startup_ml():
+    from app.services.predictive_service import load_model
+    load_model()
+
+
+@app.on_event("startup")
 async def startup_db():
     import app.models.admin  # register ORM models before create_all
     from app.database_sql import engine, Base

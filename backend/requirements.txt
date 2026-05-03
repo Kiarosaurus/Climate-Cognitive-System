@@ -5,3 +5,6 @@ motor>=3.3.0
 sqlalchemy
 psycopg2-binary
 requests
+pandas>=2.1
+scikit-learn>=1.4
+joblib>=1.3
