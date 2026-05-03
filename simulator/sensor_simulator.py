@@ -4,7 +4,7 @@ import time
 import os
 from datetime import datetime
 
-API_URL = os.getenv("API_URL", "http://localhost:8000")
+API_URL = os.getenv("API_URL", "http://backend:8000")
 ENDPOINT = f"{API_URL}/api/v1/sensors/"
 SENSOR_IDS = ["sensor-001", "sensor-002", "sensor-003"]
 INTERVAL_SECONDS = 5

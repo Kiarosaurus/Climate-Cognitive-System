@@ -59,7 +59,7 @@ Services:
 python -m venv .venv
 source .venv/bin/activate       # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn backend.app.main:app --reload
+uvicorn backend.app.main:app --reload # Ejecutar desde /backend
 ```
 
 ## API Endpoints

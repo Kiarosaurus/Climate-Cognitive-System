@@ -4,3 +4,4 @@ pymongo
 sqlalchemy
 psycopg2-binary
 requests
+motor>=3.3
