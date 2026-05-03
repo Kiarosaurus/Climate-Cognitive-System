@@ -11,14 +11,15 @@ def detect_anomaly(reading: SensorReading) -> bool:
     return reading.temperature > 40 or reading.humidity > 95
 
 
-def get_room_context(db_sql, sensor_id: str) -> dict | None:
+def get_room_context(db_sql, sensor_id: str, reading_timestamp: datetime) -> dict | None:
     from app.models.admin import Room, Schedule
 
     room = db_sql.query(Room).filter(Room.sensor_id == sensor_id).first()
     if not room:
         return None
 
-    now = datetime.utcnow()
+    # Strip tzinfo so .time() and .weekday() are naive — matches PG Time column
+    now = reading_timestamp.replace(tzinfo=None) if reading_timestamp.tzinfo else reading_timestamp
     schedule = (
         db_sql.query(Schedule)
         .filter(
@@ -51,9 +52,13 @@ async def process_reading(db, reading: SensorReading, db_sql=None) -> dict:
 
     room_context = None
     if db_sql is not None:
-        room_context = await run_in_threadpool(get_room_context, db_sql, reading.sensor_id)
+        room_context = await run_in_threadpool(
+            get_room_context, db_sql, reading.sensor_id, reading.timestamp
+        )
 
-    cognitive_action = await calculate_cooling_demand(reading.temperature, room_context)
+    cognitive_action = await calculate_cooling_demand(
+        reading.temperature, room_context, reading.timestamp
+    )
 
     inserted_id = await save_reading(db, reading)
     logger.info(

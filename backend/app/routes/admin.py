@@ -16,8 +16,8 @@ router = APIRouter()
 
 class ScheduleIn(BaseModel):
     day_of_week: int          # 0=Monday … 6=Sunday
-    start_time: str           # "HH:MM"
-    end_time: str             # "HH:MM"
+    start_time: str           # "HH:MM" or "HH:MM:SS"
+    end_time: str             # "HH:MM" or "HH:MM:SS"
     expected_people: int
 
 
@@ -30,8 +30,10 @@ class RoomIn(BaseModel):
 
 
 def _parse_time(t: str) -> dt_time:
-    h, m = map(int, t.split(":"))
-    return dt_time(h, m)
+    parts = t.split(":")
+    h, m = int(parts[0]), int(parts[1])
+    s = int(parts[2]) if len(parts) > 2 else 0
+    return dt_time(h, m, s)
 
 
 @router.post("/setup-rooms", status_code=201)

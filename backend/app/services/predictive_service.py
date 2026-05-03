@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -29,14 +29,18 @@ def load_model() -> None:
         logger.error("Failed to load ML model: %s — heuristic fallback active.", exc)
 
 
-async def calculate_cooling_demand(current_temp: float, room_context: dict) -> dict:
+async def calculate_cooling_demand(
+    current_temp: float, room_context: dict, reading_timestamp: datetime
+) -> dict:
     expected_people = (room_context or {}).get("expected_people") or 0
     target_temp = (room_context or {}).get("target_temp")
 
     if not room_context or target_temp is None:
         return {"ac_status": "STANDBY", "cooling_mode": None, "target": target_temp, "model": "none"}
 
-    hour = datetime.now(timezone.utc).hour
+    # Use sensor timestamp hour, stripped of tzinfo to match naive UTC assumption
+    ts = reading_timestamp.replace(tzinfo=None) if reading_timestamp.tzinfo else reading_timestamp
+    hour = ts.hour
 
     if _model is not None:
         features = np.array([[current_temp, hour, expected_people]], dtype=float)
