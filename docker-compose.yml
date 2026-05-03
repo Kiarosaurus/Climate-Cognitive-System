@@ -22,6 +22,16 @@ services:
     networks:
       - ccs_net
 
+  frontend:
+    build: ./frontend
+    container_name: ccs_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - ccs_net
+
   simulator:
     build: ./simulator
     container_name: ccs_simulator

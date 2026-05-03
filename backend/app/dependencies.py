@@ -1,0 +1,43 @@
+import logging
+from fastapi import Security, Depends, HTTPException, status
+from fastapi.security import APIKeyHeader
+from sqlalchemy.orm import Session
+from jose import JWTError
+
+from app.config import WATSON_EXTENSION_KEY
+from app.core.security import oauth2_scheme, decode_token
+from app.database_sql import get_db_sql
+
+logger = logging.getLogger(__name__)
+
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def require_api_key(key: str = Security(_api_key_header)):
+    if WATSON_EXTENSION_KEY and key != WATSON_EXTENSION_KEY:
+        raise HTTPException(status_code=403, detail="Invalid API key")
+
+
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db_sql),
+):
+    from app.models.admin import User  # local import avoids circular at module load
+
+    credentials_exc = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = decode_token(token)
+        username: str = payload.get("sub")
+        if not username:
+            raise credentials_exc
+    except JWTError:
+        raise credentials_exc
+
+    user = db.query(User).filter(User.username == username).first()
+    if user is None:
+        raise credentials_exc
+    return user

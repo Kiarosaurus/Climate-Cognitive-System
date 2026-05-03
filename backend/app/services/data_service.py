@@ -12,13 +12,30 @@ def detect_anomaly(reading: SensorReading) -> bool:
 
 
 def get_room_context(db_sql, sensor_id: str, reading_timestamp: datetime) -> dict | None:
-    from app.models.admin import Room, Schedule
+    from app.models.admin import SensorDevice, Schedule
 
-    room = db_sql.query(Room).filter(Room.sensor_id == sensor_id).first()
-    if not room:
+    # Look up device — skip telemetry if inactive or control disabled
+    device = (
+        db_sql.query(SensorDevice)
+        .filter(SensorDevice.id == sensor_id)
+        .first()
+    )
+
+    if not device:
+        logger.debug("sensor_id=%s not registered in sensor_devices.", sensor_id)
         return None
 
-    # Strip tzinfo so .time() and .weekday() are naive — matches PG Time column
+    if not device.is_active:
+        logger.info("sensor_id=%s is_active=False — ignoring telemetry.", sensor_id)
+        return {"_device_ignored": True}
+
+    if not device.control_enabled:
+        logger.info("sensor_id=%s control_enabled=False — no cognitive action.", sensor_id)
+        return {"_control_disabled": True}
+
+    room = device.room
+
+    # Strip tzinfo so .time()/.weekday() are naive — matches PG Time column
     now = reading_timestamp.replace(tzinfo=None) if reading_timestamp.tzinfo else reading_timestamp
     schedule = (
         db_sql.query(Schedule)
@@ -36,6 +53,7 @@ def get_room_context(db_sql, sensor_id: str, reading_timestamp: datetime) -> dic
         "max_capacity": room.max_capacity,
         "target_temp": room.target_temp,
         "expected_people": schedule.expected_people if schedule else None,
+        "device_id": device.id,
     }
 
 
@@ -51,14 +69,27 @@ async def process_reading(db, reading: SensorReading, db_sql=None) -> dict:
     anomaly = detect_anomaly(reading)
 
     room_context = None
+    cognitive_action = None
+
     if db_sql is not None:
         room_context = await run_in_threadpool(
             get_room_context, db_sql, reading.sensor_id, reading.timestamp
         )
 
-    cognitive_action = await calculate_cooling_demand(
-        reading.temperature, room_context, reading.timestamp
-    )
+    # Device inactive → skip telemetry entirely (don't even save to Mongo)
+    if isinstance(room_context, dict) and room_context.get("_device_ignored"):
+        logger.info("Dropping telemetry for inactive device sensor_id=%s.", reading.sensor_id)
+        return {"sensor_id": reading.sensor_id, "skipped": True, "reason": "device_inactive"}
+
+    # Control disabled → save reading but emit no cognitive action
+    if isinstance(room_context, dict) and room_context.get("_control_disabled"):
+        room_context = None   # don't include internal flag in response
+        cognitive_action = {"ac_status": "DISABLED", "cooling_mode": None, "target": None, "model": "none"}
+
+    if cognitive_action is None:
+        cognitive_action = await calculate_cooling_demand(
+            reading.temperature, room_context, reading.timestamp
+        )
 
     inserted_id = await save_reading(db, reading)
     logger.info(

@@ -1,0 +1,204 @@
+"""
+Generate a Watson-compatible OpenAPI 3.0.0 spec from the FastAPI app.
+
+Usage (run from project root):
+  python generate_openapi.py [--server https://your-ngrok-url.ngrok-free.app]
+
+Output: openapi_watson.json
+"""
+
+import sys
+import os
+import json
+import argparse
+
+# Allow importing the backend package from the project root
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "backend"))
+
+# Minimal env vars so config.py doesn't crash at import
+os.environ.setdefault("MONGO_URI", "mongodb://localhost:27017")
+os.environ.setdefault("POSTGRES_URI", "postgresql://postgres:postgres@localhost:5432/climate_db")
+os.environ.setdefault("WATSON_API_KEY", "")
+os.environ.setdefault("WATSON_URL", "")
+os.environ.setdefault("WATSON_ASSISTANT_ID", "")
+os.environ.setdefault("WATSON_EXTENSION_KEY", "")
+
+from app.main import app  # noqa: E402  (must come after sys.path patch)
+
+
+# ── OpenAPI 3.1 → 3.0 conversion ─────────────────────────────────────────────
+
+def _walk(obj):
+    """Recursively transform a schema object for 3.0.0 compatibility."""
+    if isinstance(obj, list):
+        return [_walk(item) for item in obj]
+    if not isinstance(obj, dict):
+        return obj
+
+    # anyOf with a null branch  →  nullable: true  (3.0 style)
+    if "anyOf" in obj:
+        non_null = [s for s in obj["anyOf"] if s != {"type": "null"} and s.get("type") != "null"]
+        has_null = len(non_null) < len(obj["anyOf"])
+        if has_null:
+            rest = {k: v for k, v in obj.items() if k != "anyOf"}
+            if len(non_null) == 1:
+                merged = {**non_null[0], **rest, "nullable": True}
+                return _walk(merged)
+            else:
+                return _walk({**rest, "anyOf": non_null, "nullable": True})
+
+    # prefixItems (JSON Schema 2020-12 tuple) → items array (3.0)
+    if "prefixItems" in obj:
+        obj = dict(obj)
+        obj["items"] = obj.pop("prefixItems")
+
+    # const → enum single value
+    if "const" in obj:
+        obj = dict(obj)
+        obj["enum"] = [obj.pop("const")]
+
+    # examples array → first value as example (3.0 uses singular)
+    if "examples" in obj and isinstance(obj["examples"], list) and obj["examples"]:
+        obj = dict(obj)
+        obj.setdefault("example", obj["examples"][0])
+        del obj["examples"]
+
+    return {k: _walk(v) for k, v in obj.items()}
+
+
+def downgrade_to_30(spec: dict) -> dict:
+    spec = _walk(spec)
+    spec["openapi"] = "3.0.0"
+    return spec
+
+
+# ── operationId enforcement ───────────────────────────────────────────────────
+
+def ensure_operation_ids(spec: dict) -> dict:
+    seen: set[str] = set()
+    for path, methods in spec.get("paths", {}).items():
+        for method, op in methods.items():
+            if not isinstance(op, dict):
+                continue
+            if not op.get("operationId"):
+                base = f"{method}_{path.replace('/', '_').strip('_')}"
+                op["operationId"] = base
+            oid = op["operationId"]
+            if oid in seen:
+                # deduplicate
+                op["operationId"] = f"{oid}_{method}"
+            seen.add(op["operationId"])
+    return spec
+
+# ── Watson strict sanitization ───────────────────────────────────────────────
+
+def sanitize_fastapi_errors_for_watson(spec: dict) -> dict:
+    """
+    Watson completely rejects anyOf, oneOf, and allOf.
+    FastAPI uses anyOf in its default ValidationError schema for the 'loc' array.
+    We overwrite it with a simplified version.
+    """
+    schemas = spec.get("components", {}).get("schemas", {})
+    
+    if "ValidationError" in schemas:
+        schemas["ValidationError"] = {
+            "title": "ValidationError",
+            "required": ["loc", "msg", "type"],
+            "type": "object",
+            "properties": {
+                "loc": {
+                    "title": "Location",
+                    "type": "array",
+                    "items": {"type": "string"}  # Simplificado: Watson solo verá strings
+                },
+                "msg": {"title": "Message", "type": "string"},
+                "type": {"title": "Error Type", "type": "string"}
+            }
+        }
+    return spec
+
+# ── Custom Parameter Injection ───────────────────────────────────────────────
+
+def inject_missing_parameters(spec: dict) -> dict:
+    """
+    Inyecta parámetros requeridos para Watson que no se exponen 
+    automáticamente en la especificación de FastAPI.
+    """
+    paths = spec.get("paths", {})
+    
+    # Buscamos la ruta y el método específico
+    sensors_path = paths.get("/api/v1/sensors/", {})
+    get_operation = sensors_path.get("get")
+    
+    if get_operation:
+        # Si no existe el bloque "parameters", lo creamos como una lista vacía
+        if "parameters" not in get_operation:
+            get_operation["parameters"] = []
+            
+        # Verificamos que no exista ya para no duplicarlo al volver a correr el script
+        has_sensor_id = any(p.get("name") == "sensor_id" for p in get_operation["parameters"])
+        
+        if not has_sensor_id:
+            get_operation["parameters"].append({
+                "name": "sensor_id",
+                "in": "query",
+                "description": "ID del sensor o aula a consultar",
+                "required": True,
+                "schema": {
+                    "type": "string"
+                }
+            })
+            
+    return spec
+
+# ── main ─────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(description="Generate Watson-compatible openapi_watson.json")
+    parser.add_argument(
+        "--server",
+        default="https://ccs-demo.ngrok-free.app",
+        help="Base server URL (ngrok or production). Default: https://ccs-demo.ngrok-free.app",
+    )
+    parser.add_argument(
+        "--out",
+        default="openapi_watson.json",
+        help="Output file name. Default: openapi_watson.json",
+    )
+    args = parser.parse_args()
+
+    print("Generating OpenAPI schema from FastAPI app...")
+    spec = app.openapi()
+
+    original_version = spec.get("openapi", "unknown")
+    print(f"  Original version : {original_version}")
+
+    spec = downgrade_to_30(spec)
+    print(f"  Downgraded to    : {spec['openapi']}")
+
+    spec = ensure_operation_ids(spec)
+    spec = sanitize_fastapi_errors_for_watson(spec)
+    
+    # Aplicamos la inyección de los parámetros faltantes
+    spec = inject_missing_parameters(spec)
+
+    spec["servers"] = [{"url": args.server}]
+    print(f"  Server URL       : {args.server}")
+
+    with open(args.out, "w", encoding="utf-8") as f:
+        json.dump(spec, f, indent=2, ensure_ascii=False)
+
+    paths = list(spec.get("paths", {}).keys())
+    print(f"\nEndpoints included ({len(paths)}):")
+    for p in paths:
+        print(f"  {p}")
+
+    print(f"\nSaved → {args.out}")
+    print("\nNext steps:")
+    print("  1. Start ngrok:  ngrok http 8000")
+    print("  2. Re-run:       python generate_openapi.py --server https://<your-id>.ngrok-free.app")
+    print("  3. Import openapi_watson.json into Watson Assistant → Integrations → Custom Extension")
+
+
+if __name__ == "__main__":
+    main()

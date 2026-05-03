@@ -1,0 +1,68 @@
+import { type ReactNode } from 'react'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useAuth } from './context/AuthContext'
+import Layout from './components/Layout'
+import Login from './components/Login'
+import GlobalDashboard from './views/GlobalDashboard'
+import RoomSearch from './views/RoomSearch'
+import RoomDetail from './views/RoomDetail'
+import SensorSearch from './views/SensorSearch'
+import Reservations from './views/Reservations'
+import UserManagement from './views/UserManagement'
+import Register from './views/Register'
+
+function ProtectedRoute({ children }: { children: ReactNode }) {
+  const { token } = useAuth()
+  return token ? <>{children}</> : <Navigate to="/login" replace />
+}
+
+function AdminRoute({ children }: { children: ReactNode }) {
+  const { user, token } = useAuth()
+  if (!token) return <Navigate to="/login" replace />
+  if (user?.role !== 'admin') return <Navigate to="/" replace />
+  return <>{children}</>
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Public */}
+        <Route path="/login"    element={<Login />} />
+        <Route path="/register" element={<Register />} />
+
+        {/* Protected — Layout wraps all */}
+        <Route
+          element={
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<GlobalDashboard />} />
+          <Route path="rooms"        element={<RoomSearch />} />
+          <Route path="room/:id"     element={<RoomDetail />} />
+          <Route
+            path="sensors"
+            element={
+              <AdminRoute>
+                <SensorSearch />
+              </AdminRoute>
+            }
+          />
+          <Route path="reservations" element={<Reservations />} />
+          <Route
+            path="admin/users"
+            element={
+              <AdminRoute>
+                <UserManagement />
+              </AdminRoute>
+            }
+          />
+        </Route>
+
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
+  )
+}

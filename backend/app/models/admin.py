@@ -1,6 +1,10 @@
-from sqlalchemy import Column, Integer, String, Float, Time, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, Time, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 from app.database_sql import Base
+
+# Valid value sets (enforced in routes, not at DB level for portability)
+ROLES = {"admin", "collaborator", "guest"}
+STATUSES = {"pending", "active", "inactive"}
 
 
 class User(Base):
@@ -9,7 +13,10 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, nullable=False, index=True)
     hashed_password = Column(String, nullable=False)
-    role = Column(String, nullable=False, default="viewer")  # 'admin' | 'viewer'
+    role = Column(String, nullable=False, default="guest")      # admin | collaborator | guest
+    status = Column(String, nullable=False, default="active")   # pending | active | inactive
+
+    reservations = relationship("Reservation", back_populates="user", cascade="all, delete-orphan")
 
 
 class Room(Base):
@@ -19,9 +26,10 @@ class Room(Base):
     name = Column(String, unique=True, nullable=False)
     max_capacity = Column(Integer, nullable=False)
     target_temp = Column(Float, nullable=False)
-    sensor_id = Column(String, unique=True, nullable=True, index=True)
 
     schedules = relationship("Schedule", back_populates="room", cascade="all, delete-orphan")
+    devices = relationship("SensorDevice", back_populates="room", cascade="all, delete-orphan")
+    reservations = relationship("Reservation", back_populates="room", cascade="all, delete-orphan")
 
 
 class Schedule(Base):
@@ -35,3 +43,28 @@ class Schedule(Base):
     expected_people = Column(Integer, nullable=False)
 
     room = relationship("Room", back_populates="schedules")
+
+
+class SensorDevice(Base):
+    __tablename__ = "sensor_devices"
+
+    id = Column(String, primary_key=True)           # "sensor-001" — matches incoming sensor_id
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    control_enabled = Column(Boolean, nullable=False, default=True)
+
+    room = relationship("Room", back_populates="devices")
+
+
+class Reservation(Base):
+    __tablename__ = "reservations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=False)
+    expected_occupancy = Column(Integer, nullable=False)
+
+    room = relationship("Room", back_populates="reservations")
+    user = relationship("User", back_populates="reservations")
