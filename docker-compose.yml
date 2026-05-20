@@ -32,16 +32,6 @@ services:
     networks:
       - ccs_net
 
-  simulator:
-    build: ./simulator
-    container_name: ccs_simulator
-    environment:
-      - API_URL=http://backend:8000
-    depends_on:
-      - backend
-    networks:
-      - ccs_net
-
   mongo:
     image: mongo:6.0
     container_name: ccs_mongo

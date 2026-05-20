@@ -78,7 +78,7 @@ async def get_co_emergencies(
     db_sql: Session = Depends(get_db_sql),
     current_user: User = Depends(get_current_user),
 ):
-    """Return CO > 50 ppm alerts from the last 5 seconds, split into real vs simulated.
+    """Return CO > 50 ppm alerts from the last 15 seconds, split into real vs simulated.
 
     Hard-fallback rules (any one forces simulated):
       1. is_simulated flag is True in the stored reading
@@ -93,17 +93,17 @@ async def get_co_emergencies(
 
     now = datetime.now(timezone.utc)
 
-    # Purge simulated readings older than 5 seconds — if the simulator stops sending,
+    # Purge simulated readings older than 15 seconds — if the simulator stops sending,
     # the DB is clean within one polling cycle and the frontend receives nothing.
-    ten_sec_ago = (now - timedelta(seconds=10)).strftime("%Y-%m-%dT%H:%M:%S.%f")
+    fiveteen_sec_ago = (now - timedelta(seconds=15)).strftime("%Y-%m-%dT%H:%M:%S.%f")
     purge = await db["sensor_readings"].delete_many(
-        {"is_simulated": True, "timestamp": {"$lt": ten_sec_ago}}
+        {"is_simulated": True, "timestamp": {"$lt": fiveteen_sec_ago}}
     )
     if purge.deleted_count:
         print(f"Purging old simulation data...")
 
     cursor = db["sensor_readings"].find(
-        {"co_ppm": {"$gt": 50}, "timestamp": {"$gte": ten_sec_ago}}
+        {"co_ppm": {"$gt": 50}, "timestamp": {"$gte": fiveteen_sec_ago}}
     ).sort("co_ppm", -1)
 
     docs = await cursor.to_list(length=200)
@@ -141,6 +141,13 @@ async def get_co_emergencies(
         is_sim_flag   = bool(doc.get("is_simulated", False))
         id_synthetic  = _looks_synthetic(sid, rid)
         room_unknown  = resolved_name is None         # any gap in SQL chain → synthetic
+
+        # DEBUG: show exactly why each entry was bucketed real vs simulated
+        print(
+            f"[EMERGENCY] sid={sid} rid={rid} resolved={resolved_name!r} "
+            f"is_sim_flag={is_sim_flag} id_synthetic={id_synthetic} room_unknown={room_unknown} "
+            f"co_ppm={doc.get('co_ppm')} ts={doc.get('timestamp')}"
+        )
 
         entry = {
             "room_id":    rid or sid,

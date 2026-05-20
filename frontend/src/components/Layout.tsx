@@ -59,7 +59,7 @@ export default function Layout() {
                                   : 'bg-amber-600 hover:bg-amber-500 shadow-amber-900/50'
   const tooltipText    = showReal
     ? `⚠ Peligro CO — Evacuar: ${affectedRooms}`
-    : `🛠️ Simulación de CO activa — ${affectedRooms}`
+    : `🛠️ Simulación de CO activa`
 
   const modalBg        = showReal ? 'bg-red-950 border-red-500'   : 'bg-amber-950 border-amber-500'
   const modalHeaderBdr = showReal ? 'border-red-800'              : 'border-amber-800'
@@ -133,7 +133,7 @@ export default function Layout() {
               <div className={`border rounded-xl divide-y ${modalRowBg}`}>
                 {activeEntries.map(e => (
                   <div key={e.sensor_id} className="flex items-center justify-between px-4 py-3">
-                    <span className="font-semibold text-slate-100">{e.room_name}</span>
+                    <span className="font-semibold text-slate-100">{e.sensor_id}</span>
                     <span className={`text-xs font-mono px-2 py-1 rounded ${modalPpmColor}`}>
                       {e.co_ppm.toFixed(1)} ppm CO
                     </span>

@@ -95,6 +95,7 @@ export default function GlobalDashboard() {
   const sendReading = useCallback(async (input: ReadingInput) => {
     setSending(true); setError(null)
     try {
+      console.log('[FRONTEND-SIM] POST /sensors/', { sensor_id: input.sensor_id, co_ppm: input.co_ppm, source: 'GlobalDashboard' })
       const { data } = await api.post('/sensors/', { ...input, is_simulated: true, timestamp: new Date().toISOString() })
       setReadings(prev => [...prev.slice(-(MAX_POINTS - 1)), { input, output: data, sentAt: Date.now() }])
     } catch (err: unknown) {
