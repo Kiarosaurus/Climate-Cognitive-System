@@ -59,8 +59,8 @@ class RoomUpdateIn(BaseModel):
 
 
 class SensorAssignIn(BaseModel):
-    new_id: Optional[str] = None   # if set and differs from path param, renames the PK
-    room_id: str
+    new_id: Optional[str] = None        # if set and differs from path param, renames the PK
+    room_id: Optional[str] = None       # None / "" → detach sensor (room_id = NULL in DB)
 
 
 class StatusPatch(BaseModel):
@@ -187,6 +187,12 @@ def update_room(
         if new_id and new_id != room_id:
             if db.query(Room).filter(Room.id == new_id).first():
                 raise HTTPException(status_code=409, detail=f"Room id='{new_id}' already exists.")
+            # When name is unchanged the old row still holds the unique name slot.
+            # Temporarily rename it so the new row can be inserted without a constraint
+            # violation. The old row is deleted in step 3 within the same transaction.
+            if payload.name == room.name:
+                room.name = f"__renaming__{room_id}"
+                db.flush()
             # Step 1: insert new room so the FK target exists before children are moved
             new_room = Room(id=new_id, name=payload.name, max_capacity=payload.max_capacity, target_temp=payload.target_temp)
             db.add(new_room)
@@ -288,8 +294,12 @@ def reassign_sensor(
     device = db.query(SensorDevice).filter(SensorDevice.id == sensor_id).first()
     if not device:
         raise HTTPException(status_code=404, detail=f"Sensor id='{sensor_id}' not found.")
-    if not db.query(Room).filter(Room.id == payload.room_id).first():
-        raise HTTPException(status_code=404, detail=f"Room id='{payload.room_id}' not found.")
+
+    # Normalise: empty string → None (detach sensor from any room)
+    room_id_val = (payload.room_id or "").strip() or None
+
+    if room_id_val and not db.query(Room).filter(Room.id == room_id_val).first():
+        raise HTTPException(status_code=404, detail=f"Room id='{room_id_val}' not found.")
 
     new_id = (payload.new_id or "").strip() or None
 
@@ -299,7 +309,7 @@ def reassign_sensor(
                 raise HTTPException(status_code=409, detail=f"Sensor id='{new_id}' already exists.")
             new_device = SensorDevice(
                 id=new_id,
-                room_id=payload.room_id,
+                room_id=room_id_val,
                 is_active=device.is_active,
                 control_enabled=device.control_enabled,
             )
@@ -307,10 +317,10 @@ def reassign_sensor(
             db.delete(device)
             db.commit()
             db.refresh(new_device)
-            logger.info("Admin '%s' renamed sensor '%s' → '%s' (room '%s').", current_user.username, sensor_id, new_id, payload.room_id)
+            logger.info("Admin '%s' renamed sensor '%s' → '%s' (room '%s').", current_user.username, sensor_id, new_id, room_id_val)
             return {"sensor_id": new_device.id, "room_id": new_device.room_id, "is_active": new_device.is_active, "control_enabled": new_device.control_enabled}
 
-        device.room_id = payload.room_id
+        device.room_id = room_id_val
         db.commit()
         db.refresh(device)
     except HTTPException:
@@ -320,7 +330,7 @@ def reassign_sensor(
         logger.error("DB error reassigning sensor: %s", exc)
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
 
-    logger.info("Admin '%s' reassigned sensor '%s' → room '%s'.", current_user.username, device.id, device.room_id)
+    logger.info("Admin '%s' reassigned sensor '%s' → room '%s'.", current_user.username, device.id, room_id_val)
     return {"sensor_id": device.id, "room_id": device.room_id, "is_active": device.is_active, "control_enabled": device.control_enabled}
 
 
@@ -599,6 +609,28 @@ def create_reservation(
         "end_time": reservation.end_time.isoformat(),
         "expected_occupancy": reservation.expected_occupancy,
     }
+
+
+@router.delete("/reservations/{reservation_id}", status_code=200)
+def delete_reservation(
+    reservation_id: int,
+    db: Session = Depends(get_db_sql),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete a reservation. Accessible to admin and collaborator roles."""
+    _require_admin_or_collaborator(current_user)
+    reservation = db.query(Reservation).filter(Reservation.id == reservation_id).first()
+    if not reservation:
+        raise HTTPException(status_code=404, detail=f"Reservation id={reservation_id} not found.")
+    try:
+        db.delete(reservation)
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.error("DB error deleting reservation id=%d: %s", reservation_id, exc)
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+    logger.info("Reservation id=%d deleted by '%s'.", reservation_id, current_user.username)
+    return {"deleted": reservation_id}
 
 
 @router.put("/reservations/{reservation_id}")

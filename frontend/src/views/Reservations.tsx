@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   CalendarDays, RefreshCw, AlertCircle, Users,
   Clock, CheckCircle2, PlusCircle, X, Pencil,
-  Calendar, DoorOpen,
+  Calendar, DoorOpen, Trash2, TriangleAlert,
 } from 'lucide-react'
 import api from '../api/client'
 import SearchableSelect from '../components/SearchableSelect'
@@ -93,6 +93,9 @@ export default function Reservations() {
     payload: EditPayload
     original: Reservation
   } | null>(null)
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [deleteConfirm,   setDeleteConfirm]   = useState('')
 
   const [form, setForm] = useState({
     room_id: '',
@@ -231,6 +234,30 @@ export default function Reservations() {
       console.error('[Reservations] update error:', err)
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       showToast('error', detail ?? 'No se pudo actualizar la reserva.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function confirmDelete() {
+    if (!selectedId || deleteConfirm !== String(selectedId)) return
+    setSubmitting(true)
+    setDeleteModalOpen(false)
+    try {
+      await api.delete(`/admin/reservations/${selectedId}`)
+      showToast('success', `Reserva #${selectedId} eliminada definitivamente.`)
+      setSelectedId(null)
+      setDeleteConfirm('')
+      setForm({
+        room_id: rooms.length > 0 ? String(rooms[0].id) : '',
+        start_time: toLocalInputValue(nowPlus(5)),
+        end_time: toLocalInputValue(nowPlus(65)),
+        expected_occupancy: 1,
+      })
+      fetchReservations()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      showToast('error', detail ?? 'No se pudo eliminar la reserva.')
     } finally {
       setSubmitting(false)
     }
@@ -440,8 +467,17 @@ export default function Reservations() {
               </div>
             </div>
 
-            {/* Submit */}
-            <div className="flex justify-end pt-1">
+            {/* Submit + delete row */}
+            <div className="flex items-center justify-between pt-1">
+              {activeTab === 'edit' && selectedId ? (
+                <button
+                  type="button"
+                  onClick={() => { setDeleteConfirm(''); setDeleteModalOpen(true) }}
+                  className="flex items-center gap-1.5 text-sm text-red-500 hover:bg-red-500/10 px-3 py-2 rounded-lg transition-colors"
+                >
+                  <Trash2 size={13} /> Eliminar reserva
+                </button>
+              ) : <span />}
               <button
                 type="submit"
                 disabled={submitting || !form.room_id || (activeTab === 'edit' && !selectedId)}
@@ -547,6 +583,66 @@ export default function Reservations() {
                 {submitting
                   ? <><RefreshCw size={13} className="animate-spin" /> Actualizando…</>
                   : <><CheckCircle2 size={14} /> Sí, Actualizar</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Eliminar Reserva ───────────────────────────────────────── */}
+      {deleteModalOpen && selectedId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-red-900/60 rounded-2xl shadow-2xl w-full max-w-md">
+
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Trash2 size={16} className="text-red-500" /> Eliminar Reserva Permanentemente
+              </h3>
+              <button onClick={() => setDeleteModalOpen(false)}
+                className="text-slate-500 hover:text-slate-200 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-5">
+              <div className="flex items-start gap-3 bg-red-950/50 border border-red-800/50 rounded-xl px-4 py-3">
+                <TriangleAlert size={16} className="text-red-400 shrink-0 mt-0.5" />
+                <p className="text-sm text-red-300 leading-relaxed">
+                  ¿Está seguro de que desea eliminar esta reserva?{' '}
+                  <strong>Esta acción es irreversible.</strong>
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">
+                  Escriba el ID de la reserva para confirmar
+                </label>
+                <input
+                  type="text"
+                  placeholder={String(selectedId)}
+                  value={deleteConfirm}
+                  onChange={e => setDeleteConfirm(e.target.value)}
+                  className="w-full bg-black border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500/50 transition placeholder-slate-600 font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 px-6 pb-5">
+              <button type="button" onClick={() => setDeleteModalOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors border border-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                disabled={submitting || deleteConfirm !== String(selectedId)}
+                className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-red-700 hover:bg-red-600 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed rounded-lg transition-colors"
+              >
+                {submitting
+                  ? <><RefreshCw size={13} className="animate-spin" /> Eliminando…</>
+                  : <><Trash2 size={13} /> Eliminar Definitivamente</>}
               </button>
             </div>
           </div>

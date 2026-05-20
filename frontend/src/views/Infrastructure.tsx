@@ -238,7 +238,7 @@ export default function Infrastructure() {
 
   function openEditSensorModal(e: React.FormEvent) {
     e.preventDefault()
-    if (!editSensorId || !editSensorRoomId) return
+    if (!editSensorId) return
     const original = devices.find(d => d.sensor_id === editSensorId)
     if (!original) return
     const newRoom = rooms.find(r => r.id === editSensorRoomId)
@@ -246,7 +246,7 @@ export default function Infrastructure() {
       original,
       newSensorId: editSensorNewId.trim() || editSensorId,
       newRoomId: editSensorRoomId,
-      newRoomName: newRoom?.name ?? editSensorRoomId,
+      newRoomName: editSensorRoomId ? (newRoom?.name ?? editSensorRoomId) : '(Sin asignar)',
     })
     setEditSensorModalOpen(true)
   }
@@ -258,7 +258,7 @@ export default function Infrastructure() {
     const idChanged = pendingSensor.newSensorId !== pendingSensor.original.sensor_id
     try {
       await api.put(`/admin/sensors/${pendingSensor.original.sensor_id}`, {
-        room_id: pendingSensor.newRoomId,
+        room_id: pendingSensor.newRoomId || null,
         ...(idChanged ? { new_id: pendingSensor.newSensorId } : {}),
       })
       const label = idChanged ? pendingSensor.newSensorId : pendingSensor.original.sensor_id
@@ -334,7 +334,12 @@ export default function Infrastructure() {
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
-  const roomOptions   = rooms.map(r => ({ value: r.id, label: `${r.id} — ${r.name}` }))
+  const roomOptions = rooms.map(r => ({ value: r.id, label: `${r.id} — ${r.name}` }))
+  // Sensor-edit variant: prepend the "detach" option (value='') so admins can orphan a sensor
+  const sensorRoomOptions = [
+    { value: '', label: '(Ninguna / Dejar Huérfano)' },
+    ...roomOptions,
+  ]
   const sensorOptions = devices.map(d => ({
     value: d.sensor_id,
     label: `${d.sensor_id}${d.room_name ? ` (${d.room_name})` : ''}`,
@@ -383,10 +388,10 @@ export default function Infrastructure() {
         </div>
       ) : (
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
 
           {/* ── Left column: Aulas ───────────────────────────────────────────── */}
-          <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden flex flex-col">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden flex flex-col h-full">
 
             {/* Card header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
@@ -405,46 +410,48 @@ export default function Infrastructure() {
               />
             </div>
 
-            <div className="p-5 flex-1">
+            <div className="p-5 flex flex-col flex-1">
 
               {/* ── Registrar Aula ────────────────────────────────────────── */}
               {roomTab === 'register' && (
-                <form onSubmit={handleRegisterRoom} className="space-y-4">
-                  <div>
-                    <label className={labelCls}>ID del Aula</label>
-                    <input type="text" required placeholder="ej. AULA-101"
-                      value={regRoomForm.id}
-                      onChange={e => setRegRoomForm(f => ({ ...f, id: e.target.value }))}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Nombre</label>
-                    <input type="text" required placeholder="ej. Laboratorio de Física"
-                      value={regRoomForm.name}
-                      onChange={e => setRegRoomForm(f => ({ ...f, name: e.target.value }))}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
+                <form onSubmit={handleRegisterRoom} className="flex flex-col flex-1 justify-between">
+                  <div className="space-y-4 flex-1">
                     <div>
-                      <label className={labelCls}>Capacidad Máxima</label>
-                      <input type="number" required min={1}
-                        value={regRoomForm.max_capacity}
-                        onChange={e => setRegRoomForm(f => ({ ...f, max_capacity: Number(e.target.value) }))}
+                      <label className={labelCls}>ID del Aula</label>
+                      <input type="text" required placeholder="ej. AULA-101"
+                        value={regRoomForm.id}
+                        onChange={e => setRegRoomForm(f => ({ ...f, id: e.target.value }))}
                         className={inputCls}
                       />
                     </div>
                     <div>
-                      <label className={labelCls}>Temp. Objetivo (°C)</label>
-                      <input type="number" required min={10} max={35} step={0.5}
-                        value={regRoomForm.target_temp}
-                        onChange={e => setRegRoomForm(f => ({ ...f, target_temp: Number(e.target.value) }))}
+                      <label className={labelCls}>Nombre</label>
+                      <input type="text" required placeholder="ej. Laboratorio de Física"
+                        value={regRoomForm.name}
+                        onChange={e => setRegRoomForm(f => ({ ...f, name: e.target.value }))}
                         className={inputCls}
                       />
                     </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className={labelCls}>Capacidad Máxima</label>
+                        <input type="number" required min={1}
+                          value={regRoomForm.max_capacity}
+                          onChange={e => setRegRoomForm(f => ({ ...f, max_capacity: Number(e.target.value) }))}
+                          className={inputCls}
+                        />
+                      </div>
+                      <div>
+                        <label className={labelCls}>Temp. Objetivo (°C)</label>
+                        <input type="number" required min={10} max={35} step={0.5}
+                          value={regRoomForm.target_temp}
+                          onChange={e => setRegRoomForm(f => ({ ...f, target_temp: Number(e.target.value) }))}
+                          className={inputCls}
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex justify-end pt-1">
+                  <div className="pt-4 border-t border-slate-700/50 flex justify-end">
                     <button type="submit" disabled={roomSubmitting}
                       className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors"
                     >
@@ -458,77 +465,81 @@ export default function Infrastructure() {
 
               {/* ── Editar Aula ───────────────────────────────────────────── */}
               {roomTab === 'edit' && (
-                <form onSubmit={openEditRoomModal} className="space-y-4">
-                  <SearchableSelect
-                    options={roomOptions}
-                    value={editRoomId}
-                    onChange={selectEditRoom}
-                    placeholder="Busca el aula a editar…"
-                    label="Seleccionar Aula"
-                    icon={<DoorOpen size={16} />}
-                  />
-                  {!editRoomId && (
-                    <p className="text-xs text-slate-500">
-                      Selecciona un aula para cargar sus datos actuales.
-                    </p>
-                  )}
-                  {editRoomId && (
-                    <>
-                      <p className="text-xs text-emerald-400 flex items-center gap-1">
-                        <CheckCircle2 size={11} /> Aula {editRoomId} cargada — modifica y revisa antes de guardar.
+                <form onSubmit={openEditRoomModal} className="flex flex-col flex-1 justify-between">
+                  <div className="space-y-4 flex-1">
+                    <SearchableSelect
+                      options={roomOptions}
+                      value={editRoomId}
+                      onChange={selectEditRoom}
+                      placeholder="Busca el aula a editar…"
+                      label="Seleccionar Aula"
+                      icon={<DoorOpen size={16} />}
+                    />
+                    {!editRoomId && (
+                      <p className="text-xs text-slate-500">
+                        Selecciona un aula para cargar sus datos actuales.
                       </p>
-                      <div>
-                        <label className={labelCls}>ID del Aula</label>
-                        <input type="text" required
-                          value={editRoomForm.new_id}
-                          onChange={e => setEditRoomForm(f => ({ ...f, new_id: e.target.value }))}
-                          className={inputCls}
-                        />
-                      </div>
-                      <div>
-                        <label className={labelCls}>Nombre</label>
-                        <input type="text" required
-                          value={editRoomForm.name}
-                          onChange={e => setEditRoomForm(f => ({ ...f, name: e.target.value }))}
-                          className={inputCls}
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
+                    )}
+                    {editRoomId && (
+                      <>
+                        <p className="text-xs text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 size={11} /> Aula {editRoomId} cargada — modifica y revisa antes de guardar.
+                        </p>
                         <div>
-                          <label className={labelCls}>Capacidad Máxima</label>
-                          <input type="number" required min={1}
-                            value={editRoomForm.max_capacity}
-                            onChange={e => setEditRoomForm(f => ({ ...f, max_capacity: Number(e.target.value) }))}
+                          <label className={labelCls}>ID del Aula</label>
+                          <input type="text" required
+                            value={editRoomForm.new_id}
+                            onChange={e => setEditRoomForm(f => ({ ...f, new_id: e.target.value }))}
                             className={inputCls}
                           />
                         </div>
                         <div>
-                          <label className={labelCls}>Temp. Objetivo (°C)</label>
-                          <input type="number" required min={10} max={35} step={0.5}
-                            value={editRoomForm.target_temp}
-                            onChange={e => setEditRoomForm(f => ({ ...f, target_temp: Number(e.target.value) }))}
+                          <label className={labelCls}>Nombre</label>
+                          <input type="text" required
+                            value={editRoomForm.name}
+                            onChange={e => setEditRoomForm(f => ({ ...f, name: e.target.value }))}
                             className={inputCls}
                           />
                         </div>
-                      </div>
-                      <div className="flex items-center justify-between pt-1">
-                        <button
-                          type="button"
-                          onClick={openDeleteRoomModal}
-                          className="flex items-center gap-1.5 text-sm text-red-500 hover:bg-red-500/10 px-3 py-2 rounded-lg transition-colors"
-                        >
-                          <Trash2 size={13} /> Eliminar aula
-                        </button>
-                        <button type="submit" disabled={roomSubmitting}
-                          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors"
-                        >
-                          {roomSubmitting
-                            ? <><RefreshCw size={13} className="animate-spin" /> Procesando…</>
-                            : <><Pencil size={13} /> Revisar y guardar</>}
-                        </button>
-                      </div>
-                    </>
-                  )}
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className={labelCls}>Capacidad Máxima</label>
+                            <input type="number" required min={1}
+                              value={editRoomForm.max_capacity}
+                              onChange={e => setEditRoomForm(f => ({ ...f, max_capacity: Number(e.target.value) }))}
+                              className={inputCls}
+                            />
+                          </div>
+                          <div>
+                            <label className={labelCls}>Temp. Objetivo (°C)</label>
+                            <input type="number" required min={10} max={35} step={0.5}
+                              value={editRoomForm.target_temp}
+                              onChange={e => setEditRoomForm(f => ({ ...f, target_temp: Number(e.target.value) }))}
+                              className={inputCls}
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <div className="pt-4 border-t border-slate-700/50 flex items-center justify-between">
+                    {editRoomId ? (
+                      <button
+                        type="button"
+                        onClick={openDeleteRoomModal}
+                        className="flex items-center gap-1.5 text-sm text-red-500 hover:bg-red-500/10 px-3 py-2 rounded-lg transition-colors"
+                      >
+                        <Trash2 size={13} /> Eliminar aula
+                      </button>
+                    ) : <span />}
+                    <button type="submit" disabled={!editRoomId || roomSubmitting}
+                      className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors"
+                    >
+                      {roomSubmitting
+                        ? <><RefreshCw size={13} className="animate-spin" /> Procesando…</>
+                        : <><Pencil size={13} /> Revisar y guardar</>}
+                    </button>
+                  </div>
                 </form>
               )}
 
@@ -536,7 +547,7 @@ export default function Infrastructure() {
           </div>
 
           {/* ── Right column: Sensores ───────────────────────────────────────── */}
-          <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden flex flex-col">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden flex flex-col h-full">
 
             {/* Card header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
@@ -555,45 +566,47 @@ export default function Infrastructure() {
               />
             </div>
 
-            <div className="p-5 flex-1">
+            <div className="p-5 flex flex-col flex-1">
 
               {/* ── Registrar Sensor ──────────────────────────────────────── */}
               {sensorTab === 'register' && (
-                <form onSubmit={handleRegisterSensor} className="space-y-4">
-                  <div>
-                    <label className={labelCls}>ID del Sensor</label>
-                    <input type="text" required placeholder="ej. sensor-lab-101-a"
-                      value={regSensorForm.id}
-                      onChange={e => setRegSensorForm(f => ({ ...f, id: e.target.value }))}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    {rooms.length === 0 ? (
-                      <div className="flex items-center gap-2 text-amber-400 text-sm bg-amber-900/20 border border-amber-500/30 rounded-lg px-3 py-2.5">
-                        <AlertCircle size={14} className="shrink-0" />
-                        No hay aulas registradas. Registra una antes de añadir sensores.
-                      </div>
-                    ) : (
-                      <SearchableSelect
-                        options={roomOptions}
-                        value={regSensorForm.room_id}
-                        onChange={v => setRegSensorForm(f => ({ ...f, room_id: v }))}
-                        placeholder="Selecciona un aula…"
-                        label="Aula Asignada"
-                        icon={<DoorOpen size={16} />}
+                <form onSubmit={handleRegisterSensor} className="flex flex-col flex-1 justify-between">
+                  <div className="space-y-4 flex-1">
+                    <div>
+                      <label className={labelCls}>ID del Sensor</label>
+                      <input type="text" required placeholder="ej. sensor-lab-101-a"
+                        value={regSensorForm.id}
+                        onChange={e => setRegSensorForm(f => ({ ...f, id: e.target.value }))}
+                        className={inputCls}
                       />
-                    )}
+                    </div>
+                    <div>
+                      {rooms.length === 0 ? (
+                        <div className="flex items-center gap-2 text-amber-400 text-sm bg-amber-900/20 border border-amber-500/30 rounded-lg px-3 py-2.5">
+                          <AlertCircle size={14} className="shrink-0" />
+                          No hay aulas registradas. Registra una antes de añadir sensores.
+                        </div>
+                      ) : (
+                        <SearchableSelect
+                          options={roomOptions}
+                          value={regSensorForm.room_id}
+                          onChange={v => setRegSensorForm(f => ({ ...f, room_id: v }))}
+                          placeholder="Selecciona un aula…"
+                          label="Aula Asignada"
+                          icon={<DoorOpen size={16} />}
+                        />
+                      )}
+                    </div>
+                    <div className="flex items-start gap-2 bg-slate-900/50 border border-slate-700/60 rounded-lg px-3 py-2.5">
+                      <Info size={13} className="text-slate-500 shrink-0 mt-0.5" />
+                      <p className="text-xs text-slate-400">
+                        Sensores nuevos se inicializan{' '}
+                        <strong className="text-slate-300">apagados y sin control AC</strong>.
+                        Actívalos desde el Dashboard del aula tras la instalación física.
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex items-start gap-2 bg-slate-900/50 border border-slate-700/60 rounded-lg px-3 py-2.5">
-                    <Info size={13} className="text-slate-500 shrink-0 mt-0.5" />
-                    <p className="text-xs text-slate-400">
-                      Sensores nuevos se inicializan{' '}
-                      <strong className="text-slate-300">apagados y sin control AC</strong>.
-                      Actívalos desde el Dashboard del aula tras la instalación física.
-                    </p>
-                  </div>
-                  <div className="flex justify-end pt-1">
+                  <div className="pt-4 border-t border-slate-700/50 flex justify-end">
                     <button type="submit"
                       disabled={sensorSubmitting || !regSensorForm.room_id || rooms.length === 0}
                       className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors"
@@ -608,81 +621,84 @@ export default function Infrastructure() {
 
               {/* ── Editar Sensor ─────────────────────────────────────────── */}
               {sensorTab === 'edit' && (
-                <form onSubmit={openEditSensorModal} className="space-y-4">
-                  <SearchableSelect
-                    options={sensorOptions}
-                    value={editSensorId}
-                    onChange={selectEditSensor}
-                    placeholder="Busca el sensor a reasignar…"
-                    label="Seleccionar Sensor"
-                    icon={<Radio size={16} />}
-                  />
-                  {!editSensorId && (
-                    <p className="text-xs text-slate-500">
-                      Selecciona un sensor para ver su aula actual y reasignarlo.
-                    </p>
-                  )}
-                  {editSensorId && (
-                    <>
-                      <p className="text-xs text-emerald-400 flex items-center gap-1">
-                        <CheckCircle2 size={11} /> Sensor {editSensorId} seleccionado.
+                <form onSubmit={openEditSensorModal} className="flex flex-col flex-1 justify-between">
+                  <div className="space-y-4 flex-1">
+                    <SearchableSelect
+                      options={sensorOptions}
+                      value={editSensorId}
+                      onChange={selectEditSensor}
+                      placeholder="Busca el sensor a reasignar…"
+                      label="Seleccionar Sensor"
+                      icon={<Radio size={16} />}
+                    />
+                    {!editSensorId && (
+                      <p className="text-xs text-slate-500">
+                        Selecciona un sensor para ver su aula actual y reasignarlo.
                       </p>
-
-                      {/* Current assignment */}
-                      <div className="bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-3">
-                        <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Aula actual</p>
-                        <p className="text-slate-200 font-medium text-sm">
-                          {currentDevice?.room_name ?? currentDevice?.room_id ?? '—'}
-                          {currentDevice?.room_name && (
-                            <span className="ml-2 text-xs text-slate-500">({currentDevice.room_id})</span>
-                          )}
+                    )}
+                    {editSensorId && (
+                      <>
+                        <p className="text-xs text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 size={11} /> Sensor {editSensorId} seleccionado.
                         </p>
-                        <p className={`text-xs mt-1 ${currentDevice?.is_active ? 'text-emerald-400' : 'text-slate-500'}`}>
-                          {currentDevice?.is_active ? 'Activo' : 'Inactivo'}
-                          {' · '}
-                          {currentDevice?.control_enabled ? 'Control AC habilitado' : 'Control AC deshabilitado'}
-                        </p>
-                      </div>
 
-                      {/* New sensor ID */}
-                      <div>
-                        <label className={labelCls}>ID del Sensor</label>
-                        <input type="text" required
-                          value={editSensorNewId}
-                          onChange={e => setEditSensorNewId(e.target.value)}
-                          className={inputCls}
+                        {/* Current assignment */}
+                        <div className="bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-3">
+                          <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Aula actual</p>
+                          <p className="text-slate-200 font-medium text-sm">
+                            {currentDevice?.room_name ?? currentDevice?.room_id ?? '—'}
+                            {currentDevice?.room_name && (
+                              <span className="ml-2 text-xs text-slate-500">({currentDevice.room_id})</span>
+                            )}
+                          </p>
+                          <p className={`text-xs mt-1 ${currentDevice?.is_active ? 'text-emerald-400' : 'text-slate-500'}`}>
+                            {currentDevice?.is_active ? 'Activo' : 'Inactivo'}
+                            {' · '}
+                            {currentDevice?.control_enabled ? 'Control AC habilitado' : 'Control AC deshabilitado'}
+                          </p>
+                        </div>
+
+                        {/* New sensor ID */}
+                        <div>
+                          <label className={labelCls}>ID del Sensor</label>
+                          <input type="text" required
+                            value={editSensorNewId}
+                            onChange={e => setEditSensorNewId(e.target.value)}
+                            className={inputCls}
+                          />
+                        </div>
+
+                        {/* New room picker — includes "(Ninguna)" to detach sensor */}
+                        <SearchableSelect
+                          options={sensorRoomOptions}
+                          value={editSensorRoomId}
+                          onChange={v => setEditSensorRoomId(v)}
+                          placeholder="Nueva aula destino…"
+                          label="Nueva Aula"
+                          icon={<DoorOpen size={16} />}
                         />
-                      </div>
-
-                      {/* New room picker */}
-                      <SearchableSelect
-                        options={roomOptions}
-                        value={editSensorRoomId}
-                        onChange={v => setEditSensorRoomId(v)}
-                        placeholder="Nueva aula destino…"
-                        label="Nueva Aula"
-                        icon={<DoorOpen size={16} />}
-                      />
-
-                      <div className="flex items-center justify-between pt-1">
-                        <button
-                          type="button"
-                          onClick={() => { setDeleteSensorConfirm(''); setDeleteSensorModalOpen(true) }}
-                          className="flex items-center gap-1.5 text-sm text-red-500 hover:bg-red-500/10 px-3 py-2 rounded-lg transition-colors"
-                        >
-                          <Trash2 size={13} /> Eliminar sensor
-                        </button>
-                        <button type="submit"
-                          disabled={sensorSubmitting || !editSensorRoomId || (editSensorRoomId === currentDevice?.room_id && editSensorNewId.trim() === editSensorId)}
-                          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors"
-                        >
-                          {sensorSubmitting
-                            ? <><RefreshCw size={13} className="animate-spin" /> Procesando…</>
-                            : <><Pencil size={13} /> Revisar y reasignar</>}
-                        </button>
-                      </div>
-                    </>
-                  )}
+                      </>
+                    )}
+                  </div>
+                  <div className="pt-4 border-t border-slate-700/50 flex items-center justify-between">
+                    {editSensorId ? (
+                      <button
+                        type="button"
+                        onClick={() => { setDeleteSensorConfirm(''); setDeleteSensorModalOpen(true) }}
+                        className="flex items-center gap-1.5 text-sm text-red-500 hover:bg-red-500/10 px-3 py-2 rounded-lg transition-colors"
+                      >
+                        <Trash2 size={13} /> Eliminar sensor
+                      </button>
+                    ) : <span />}
+                    <button type="submit"
+                      disabled={!editSensorId || sensorSubmitting || ((editSensorRoomId || null) === (currentDevice?.room_id ?? null) && editSensorNewId.trim() === editSensorId)}
+                      className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors"
+                    >
+                      {sensorSubmitting
+                        ? <><RefreshCw size={13} className="animate-spin" /> Procesando…</>
+                        : <><Pencil size={13} /> Revisar y reasignar</>}
+                    </button>
+                  </div>
                 </form>
               )}
 
@@ -738,6 +754,27 @@ export default function Infrastructure() {
                 />
               </div>
             </div>
+
+            {/* Cascade-impact notice — only when ID is being renamed */}
+            {pendingRoom && !!pendingRoom.form.new_id && pendingRoom.form.new_id !== pendingRoom.original.id && (
+              <div className="mx-6 mb-4 bg-amber-950/40 border border-amber-700/50 rounded-xl px-4 py-3 space-y-2">
+                <p className="text-xs font-semibold text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
+                  <TriangleAlert size={12} className="shrink-0" /> Impacto en cascada del cambio de ID
+                </p>
+                <label className="flex items-center gap-2.5 cursor-default pointer-events-none">
+                  <input type="checkbox" checked onChange={() => {}}
+                    className="w-3.5 h-3.5 rounded border-amber-600 bg-amber-900/30 accent-amber-500 shrink-0"
+                  />
+                  <span className="text-xs text-amber-200">Actualizar el ID en todas las reservas asociadas a esta aula.</span>
+                </label>
+                <label className="flex items-center gap-2.5 cursor-default pointer-events-none">
+                  <input type="checkbox" checked onChange={() => {}}
+                    className="w-3.5 h-3.5 rounded border-amber-600 bg-amber-900/30 accent-amber-500 shrink-0"
+                  />
+                  <span className="text-xs text-amber-200">Actualizar la asociación de ID en todos los sensores instalados.</span>
+                </label>
+              </div>
+            )}
 
             <div className="flex items-center justify-end gap-3 px-6 pb-5">
               <button type="button" onClick={() => setEditRoomModalOpen(false)}
@@ -882,7 +919,7 @@ export default function Infrastructure() {
                   <span className="w-2 h-2 rounded-full bg-slate-500 inline-block" /> Asignación Actual
                 </p>
                 <DataRow label="Sensor ID"    value={pendingSensor.original.sensor_id} />
-                <DataRow label="Aula Asignada" value={pendingSensor.original.room_name ?? pendingSensor.original.room_id} />
+                <DataRow label="Aula Asignada" value={pendingSensor.original.room_name ?? pendingSensor.original.room_id ?? '(Sin asignar)'} />
                 <DataRow label="Estado"        value={pendingSensor.original.is_active ? 'Activo' : 'Inactivo'} />
               </div>
               <div className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-4 space-y-4">
@@ -894,8 +931,10 @@ export default function Infrastructure() {
                   value={pendingSensor.newSensorId}
                   changed={pendingSensor.newSensorId !== pendingSensor.original.sensor_id}
                 />
-                <DataRow label="Aula Asignada" value={pendingSensor.newRoomName}
-                  changed={pendingSensor.newRoomId !== pendingSensor.original.room_id}
+                <DataRow
+                  label="Aula Asignada"
+                  value={pendingSensor.newRoomName || '(Sin asignar)'}
+                  changed={(pendingSensor.newRoomId || null) !== (pendingSensor.original.room_id ?? null)}
                 />
                 <DataRow label="Estado" value={pendingSensor.original.is_active ? 'Activo' : 'Inactivo'} />
               </div>

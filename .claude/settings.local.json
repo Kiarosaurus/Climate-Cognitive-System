@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(///wsl.localhost/Ubuntu/home/kiara/CC/**)",
+      "Read(///wsl.localhost/Ubuntu/home/kiara/CC/Climate-Cognitive-System/**)",
+      "Read(///wsl.localhost/Ubuntu/home/kiara/CC/Climate-Cognitive-System/backend/app/**)",
+      "Bash(find \"\\\\\\\\wsl.localhost\\\\Ubuntu\\\\home\\\\kiara\\\\CC\\\\Climate-Cognitive-System\\\\frontend\" -type f \\\\\\( -name \"*.js\" -o -name \"*.jsx\" -o -name \"*.ts\" -o -name \"*.tsx\" \\\\\\))",
+      "Bash(ls *)",
+      "Bash(xargs grep -l \"simulate\\\\|random\\\\|test\")",
+      "Bash(xargs grep -l \"simulate\\\\|random\")",
+      "Bash(grep -n \"deleteRoom\\\\|deleteSensor\\\\|openDeleteRoom\\\\|confirmDelete\\\\|Trash2\\\\|TriangleAlert\\\\|RoomImpact\\\\|cascadeSensors\\\\|deleteReservations\\\\|impactLoading\" \"\\\\\\\\wsl.localhost\\\\Ubuntu\\\\home\\\\kiara\\\\CC\\\\Climate-Cognitive-System\\\\frontend\\\\src\\\\views\\\\Infrastructure.tsx\")",
+      "Bash(grep -n \"get_room_impact\\\\|delete_room\\\\|delete_sensor\\\\|DELETE\\\\|cascade_sensors\\\\|delete_reservations\\\\|nullable=True\" \"\\\\\\\\wsl.localhost\\\\Ubuntu\\\\home\\\\kiara\\\\CC\\\\Climate-Cognitive-System\\\\backend\\\\app\\\\routes\\\\admin.py\")",
+      "Bash(grep *)"
+    ]
+  }
+}
