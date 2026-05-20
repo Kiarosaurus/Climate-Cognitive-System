@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  Building2, Cpu, Radio, PlusCircle, Pencil,
-  RefreshCw, AlertCircle, CheckCircle2, X, Info, DoorOpen,
+  Building2, Cpu, Radio, PlusCircle, Pencil, Trash2,
+  RefreshCw, AlertCircle, CheckCircle2, X, Info, DoorOpen, TriangleAlert,
 } from 'lucide-react'
 import api from '../api/client'
 import SearchableSelect from '../components/SearchableSelect'
@@ -24,7 +24,8 @@ interface SensorDevice {
 }
 
 interface Toast { type: 'success' | 'error'; message: string }
-interface EditRoomForm { name: string; max_capacity: number; target_temp: number }
+interface EditRoomForm { new_id: string; name: string; max_capacity: number; target_temp: number }
+interface RoomImpact { reservations_count: number; sensors_count: number }
 
 type RoomTab   = 'register' | 'edit'
 type SensorTab = 'register' | 'edit'
@@ -98,7 +99,7 @@ export default function Infrastructure() {
 
   // ── Edit room ─────────────────────────────────────────────────────────────
   const [editRoomId,       setEditRoomId]       = useState('')
-  const [editRoomForm,     setEditRoomForm]     = useState<EditRoomForm>({ name: '', max_capacity: 30, target_temp: 22 })
+  const [editRoomForm,     setEditRoomForm]     = useState<EditRoomForm>({ new_id: '', name: '', max_capacity: 30, target_temp: 22 })
   const [editRoomModalOpen, setEditRoomModalOpen] = useState(false)
   const [pendingRoom, setPendingRoom] = useState<{ original: Room; form: EditRoomForm } | null>(null)
 
@@ -107,11 +108,23 @@ export default function Infrastructure() {
 
   // ── Edit sensor ───────────────────────────────────────────────────────────
   const [editSensorId,       setEditSensorId]       = useState('')
+  const [editSensorNewId,    setEditSensorNewId]    = useState('')
   const [editSensorRoomId,   setEditSensorRoomId]   = useState('')
   const [editSensorModalOpen, setEditSensorModalOpen] = useState(false)
   const [pendingSensor, setPendingSensor] = useState<{
-    original: SensorDevice; newRoomId: string; newRoomName: string
+    original: SensorDevice; newSensorId: string; newRoomId: string; newRoomName: string
   } | null>(null)
+
+  // ── Delete room modal ─────────────────────────────────────────────────────
+  const [deleteRoomModalOpen,  setDeleteRoomModalOpen]  = useState(false)
+  const [roomImpact,           setRoomImpact]           = useState<RoomImpact | null>(null)
+  const [impactLoading,        setImpactLoading]        = useState(false)
+  const [deleteRoomConfirm,    setDeleteRoomConfirm]    = useState('')
+  const [deleteReservations,   setDeleteReservations]   = useState(false)
+
+  // ── Delete sensor modal ───────────────────────────────────────────────────
+  const [deleteSensorModalOpen, setDeleteSensorModalOpen] = useState(false)
+  const [deleteSensorConfirm,   setDeleteSensorConfirm]   = useState('')
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -146,7 +159,7 @@ export default function Infrastructure() {
   function selectEditRoom(id: string) {
     setEditRoomId(id)
     const room = rooms.find(r => r.id === id)
-    if (room) setEditRoomForm({ name: room.name, max_capacity: room.max_capacity, target_temp: room.target_temp })
+    if (room) setEditRoomForm({ new_id: room.id, name: room.name, max_capacity: room.max_capacity, target_temp: room.target_temp })
   }
 
   async function handleRegisterRoom(e: React.FormEvent) {
@@ -181,10 +194,14 @@ export default function Infrastructure() {
     if (!pendingRoom) return
     setRoomSubmitting(true)
     setEditRoomModalOpen(false)
+    const idChanged = pendingRoom.form.new_id && pendingRoom.form.new_id !== pendingRoom.original.id
     try {
       await api.put(`/admin/rooms/${pendingRoom.original.id}`, pendingRoom.form)
-      showToast('success', `Aula '${pendingRoom.original.id}' actualizada correctamente.`)
+      const label = idChanged ? pendingRoom.form.new_id : pendingRoom.original.id
+      showToast('success', `Aula '${label}' actualizada correctamente.`)
       setPendingRoom(null)
+      setEditRoomId('')
+      setEditRoomForm({ new_id: '', name: '', max_capacity: 30, target_temp: 22 })
       await refreshRooms()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -196,6 +213,7 @@ export default function Infrastructure() {
 
   function selectEditSensor(id: string) {
     setEditSensorId(id)
+    setEditSensorNewId(id)
     const dev = devices.find(d => d.sensor_id === id)
     setEditSensorRoomId(dev?.room_id ?? '')
   }
@@ -224,7 +242,12 @@ export default function Infrastructure() {
     const original = devices.find(d => d.sensor_id === editSensorId)
     if (!original) return
     const newRoom = rooms.find(r => r.id === editSensorRoomId)
-    setPendingSensor({ original, newRoomId: editSensorRoomId, newRoomName: newRoom?.name ?? editSensorRoomId })
+    setPendingSensor({
+      original,
+      newSensorId: editSensorNewId.trim() || editSensorId,
+      newRoomId: editSensorRoomId,
+      newRoomName: newRoom?.name ?? editSensorRoomId,
+    })
     setEditSensorModalOpen(true)
   }
 
@@ -232,16 +255,80 @@ export default function Infrastructure() {
     if (!pendingSensor) return
     setSensorSubmitting(true)
     setEditSensorModalOpen(false)
+    const idChanged = pendingSensor.newSensorId !== pendingSensor.original.sensor_id
     try {
-      await api.put(`/admin/sensors/${pendingSensor.original.sensor_id}`, { room_id: pendingSensor.newRoomId })
-      showToast('success', `Sensor '${pendingSensor.original.sensor_id}' reasignado correctamente.`)
+      await api.put(`/admin/sensors/${pendingSensor.original.sensor_id}`, {
+        room_id: pendingSensor.newRoomId,
+        ...(idChanged ? { new_id: pendingSensor.newSensorId } : {}),
+      })
+      const label = idChanged ? pendingSensor.newSensorId : pendingSensor.original.sensor_id
+      showToast('success', `Sensor '${label}' actualizado correctamente.`)
       setPendingSensor(null)
       setEditSensorId('')
+      setEditSensorNewId('')
       setEditSensorRoomId('')
       await refreshDevices()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      showToast('error', detail ?? 'No se pudo reasignar el sensor.')
+      showToast('error', detail ?? 'No se pudo actualizar el sensor.')
+    } finally { setSensorSubmitting(false) }
+  }
+
+  // ── Delete room handlers ──────────────────────────────────────────────────
+
+  async function openDeleteRoomModal() {
+    if (!editRoomId) return
+    setDeleteRoomModalOpen(true)
+    setDeleteRoomConfirm('')
+    setDeleteReservations(false)
+    setRoomImpact(null)
+    setImpactLoading(true)
+    try {
+      const { data } = await api.get<RoomImpact>(`/admin/rooms/${editRoomId}/impact`)
+      setRoomImpact(data)
+    } catch {
+      setRoomImpact({ reservations_count: 0, sensors_count: 0 })
+    } finally {
+      setImpactLoading(false)
+    }
+  }
+
+  async function confirmDeleteRoom() {
+    if (!editRoomId || deleteRoomConfirm !== editRoomId) return
+    setRoomSubmitting(true)
+    setDeleteRoomModalOpen(false)
+    try {
+      await api.delete(`/admin/rooms/${editRoomId}`, {
+        params: { delete_reservations: deleteReservations },
+      })
+      showToast('success', `Aula '${editRoomId}' eliminada definitivamente.`)
+      setEditRoomId('')
+      setEditRoomForm({ new_id: '', name: '', max_capacity: 30, target_temp: 22 })
+      setDeleteRoomConfirm('')
+      setRoomImpact(null)
+      await Promise.all([refreshRooms(), refreshDevices()])
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      showToast('error', detail ?? 'No se pudo eliminar el aula.')
+    } finally { setRoomSubmitting(false) }
+  }
+
+  // ── Delete sensor handlers ────────────────────────────────────────────────
+
+  async function confirmDeleteSensor() {
+    if (!editSensorId || deleteSensorConfirm !== editSensorId) return
+    setSensorSubmitting(true)
+    setDeleteSensorModalOpen(false)
+    try {
+      await api.delete(`/admin/sensors/${editSensorId}`)
+      showToast('success', `Sensor '${editSensorId}' eliminado definitivamente.`)
+      setEditSensorId('')
+      setEditSensorRoomId('')
+      setDeleteSensorConfirm('')
+      await refreshDevices()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      showToast('error', detail ?? 'No se pudo eliminar el sensor.')
     } finally { setSensorSubmitting(false) }
   }
 
@@ -391,6 +478,14 @@ export default function Infrastructure() {
                         <CheckCircle2 size={11} /> Aula {editRoomId} cargada — modifica y revisa antes de guardar.
                       </p>
                       <div>
+                        <label className={labelCls}>ID del Aula</label>
+                        <input type="text" required
+                          value={editRoomForm.new_id}
+                          onChange={e => setEditRoomForm(f => ({ ...f, new_id: e.target.value }))}
+                          className={inputCls}
+                        />
+                      </div>
+                      <div>
                         <label className={labelCls}>Nombre</label>
                         <input type="text" required
                           value={editRoomForm.name}
@@ -416,7 +511,14 @@ export default function Infrastructure() {
                           />
                         </div>
                       </div>
-                      <div className="flex justify-end pt-1">
+                      <div className="flex items-center justify-between pt-1">
+                        <button
+                          type="button"
+                          onClick={openDeleteRoomModal}
+                          className="flex items-center gap-1.5 text-sm text-red-500 hover:bg-red-500/10 px-3 py-2 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={13} /> Eliminar aula
+                        </button>
                         <button type="submit" disabled={roomSubmitting}
                           className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors"
                         >
@@ -542,6 +644,16 @@ export default function Infrastructure() {
                         </p>
                       </div>
 
+                      {/* New sensor ID */}
+                      <div>
+                        <label className={labelCls}>ID del Sensor</label>
+                        <input type="text" required
+                          value={editSensorNewId}
+                          onChange={e => setEditSensorNewId(e.target.value)}
+                          className={inputCls}
+                        />
+                      </div>
+
                       {/* New room picker */}
                       <SearchableSelect
                         options={roomOptions}
@@ -552,9 +664,16 @@ export default function Infrastructure() {
                         icon={<DoorOpen size={16} />}
                       />
 
-                      <div className="flex justify-end pt-1">
+                      <div className="flex items-center justify-between pt-1">
+                        <button
+                          type="button"
+                          onClick={() => { setDeleteSensorConfirm(''); setDeleteSensorModalOpen(true) }}
+                          className="flex items-center gap-1.5 text-sm text-red-500 hover:bg-red-500/10 px-3 py-2 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={13} /> Eliminar sensor
+                        </button>
                         <button type="submit"
-                          disabled={sensorSubmitting || !editSensorRoomId || editSensorRoomId === currentDevice?.room_id}
+                          disabled={sensorSubmitting || !editSensorRoomId || (editSensorRoomId === currentDevice?.room_id && editSensorNewId.trim() === editSensorId)}
                           className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition-colors"
                         >
                           {sensorSubmitting
@@ -603,7 +722,11 @@ export default function Infrastructure() {
                 <p className="text-xs font-semibold text-blue-400 uppercase tracking-wide flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" /> Nuevos Datos
                 </p>
-                <DataRow label="ID"    value={pendingRoom.original.id} />
+                <DataRow
+                  label="ID"
+                  value={pendingRoom.form.new_id || pendingRoom.original.id}
+                  changed={!!pendingRoom.form.new_id && pendingRoom.form.new_id !== pendingRoom.original.id}
+                />
                 <DataRow label="Nombre" value={pendingRoom.form.name}
                   changed={pendingRoom.form.name !== pendingRoom.original.name}
                 />
@@ -628,6 +751,109 @@ export default function Infrastructure() {
                 {roomSubmitting
                   ? <><RefreshCw size={13} className="animate-spin" /> Actualizando…</>
                   : <><CheckCircle2 size={14} /> Sí, Guardar</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Eliminar Aula ──────────────────────────────────────────── */}
+      {deleteRoomModalOpen && editRoomId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-red-900/60 rounded-2xl shadow-2xl w-full max-w-lg">
+
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Trash2 size={16} className="text-red-500" /> Eliminar Aula Permanentemente
+              </h3>
+              <button onClick={() => setDeleteRoomModalOpen(false)}
+                className="text-slate-500 hover:text-slate-200 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-5">
+
+              {/* Impact warning */}
+              <div className="flex items-start gap-3 bg-red-950/50 border border-red-800/50 rounded-xl px-4 py-3">
+                <TriangleAlert size={16} className="text-red-400 shrink-0 mt-0.5" />
+                {impactLoading ? (
+                  <p className="text-sm text-slate-400 flex items-center gap-2">
+                    <RefreshCw size={12} className="animate-spin" /> Calculando impacto…
+                  </p>
+                ) : (
+                  <div className="text-sm text-red-300 leading-relaxed space-y-1">
+                    <p>
+                      <strong>Advertencia:</strong> Esta aula tiene{' '}
+                      <span className="font-bold text-red-200">{roomImpact?.reservations_count ?? 0} reserva{(roomImpact?.reservations_count ?? 0) !== 1 ? 's' : ''}</span>.
+                    </p>
+                    {(roomImpact?.sensors_count ?? 0) > 0 && (
+                      <p className="text-amber-300">
+                        Los <span className="font-bold">{roomImpact!.sensors_count} sensores</span> asignados
+                        quedarán huérfanos automáticamente (sus registros se conservan).
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Confirmation input */}
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">
+                  Escribe el ID del aula para confirmar
+                </label>
+                <input
+                  type="text"
+                  placeholder={editRoomId}
+                  value={deleteRoomConfirm}
+                  onChange={e => setDeleteRoomConfirm(e.target.value)}
+                  className="w-full bg-black border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500/50 transition placeholder-slate-600 font-mono"
+                />
+              </div>
+
+              {/* Checkbox — only enabled when ID matches */}
+              <div className={`transition-opacity ${deleteRoomConfirm === editRoomId ? 'opacity-100' : 'opacity-30 pointer-events-none'}`}>
+                <label className="flex items-start gap-3 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={deleteReservations}
+                    onChange={e => setDeleteReservations(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-600 bg-slate-800 text-red-500 focus:ring-red-500/50 cursor-pointer shrink-0"
+                  />
+                  <span className="text-sm text-slate-300 leading-relaxed group-hover:text-slate-100 transition-colors">
+                    Eliminar todas las reservas asociadas a esta aula.
+                    {(roomImpact?.reservations_count ?? 0) > 0 && (
+                      <span className="ml-1 text-xs text-red-400">
+                        ({roomImpact!.reservations_count} reserva{roomImpact!.reservations_count !== 1 ? 's' : ''})
+                      </span>
+                    )}
+                  </span>
+                </label>
+                {(roomImpact?.sensors_count ?? 0) > 0 && (
+                  <p className="mt-2 text-xs text-amber-400 flex items-center gap-1.5 pl-7">
+                    <Info size={11} className="shrink-0" />
+                    {roomImpact!.sensors_count} sensor{roomImpact!.sensors_count !== 1 ? 'es' : ''} quedarán sin asignar (se conservan como auditoría IoT).
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 px-6 pb-5">
+              <button type="button" onClick={() => setDeleteRoomModalOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors border border-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteRoom}
+                disabled={roomSubmitting || deleteRoomConfirm !== editRoomId}
+                className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-red-700 hover:bg-red-600 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed rounded-lg transition-colors"
+              >
+                {roomSubmitting
+                  ? <><RefreshCw size={13} className="animate-spin" /> Eliminando…</>
+                  : <><Trash2 size={13} /> Eliminar Definitivamente</>}
               </button>
             </div>
           </div>
@@ -663,7 +889,11 @@ export default function Infrastructure() {
                 <p className="text-xs font-semibold text-blue-400 uppercase tracking-wide flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" /> Nueva Asignación
                 </p>
-                <DataRow label="Sensor ID" value={pendingSensor.original.sensor_id} />
+                <DataRow
+                  label="Sensor ID"
+                  value={pendingSensor.newSensorId}
+                  changed={pendingSensor.newSensorId !== pendingSensor.original.sensor_id}
+                />
                 <DataRow label="Aula Asignada" value={pendingSensor.newRoomName}
                   changed={pendingSensor.newRoomId !== pendingSensor.original.room_id}
                 />
@@ -683,6 +913,68 @@ export default function Infrastructure() {
                 {sensorSubmitting
                   ? <><RefreshCw size={13} className="animate-spin" /> Actualizando…</>
                   : <><CheckCircle2 size={14} /> Sí, Reasignar</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Eliminar Sensor ────────────────────────────────────────── */}
+      {deleteSensorModalOpen && editSensorId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-red-900/60 rounded-2xl shadow-2xl w-full max-w-md">
+
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Trash2 size={16} className="text-red-500" /> Eliminar Sensor Permanentemente
+              </h3>
+              <button onClick={() => setDeleteSensorModalOpen(false)}
+                className="text-slate-500 hover:text-slate-200 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-5">
+              <div className="flex items-start gap-3 bg-red-950/50 border border-red-800/50 rounded-xl px-4 py-3">
+                <TriangleAlert size={16} className="text-red-400 shrink-0 mt-0.5" />
+                <p className="text-sm text-red-300 leading-relaxed">
+                  <strong>Advertencia:</strong> El sensor{' '}
+                  <span className="font-mono text-red-200">{editSensorId}</span>{' '}
+                  será eliminado de la base de datos. Las lecturas históricas en MongoDB se
+                  conservan como auditoría física.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">
+                  Escribe el ID del sensor físico para confirmar
+                </label>
+                <input
+                  type="text"
+                  placeholder={editSensorId}
+                  value={deleteSensorConfirm}
+                  onChange={e => setDeleteSensorConfirm(e.target.value)}
+                  className="w-full bg-black border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500/50 transition placeholder-slate-600 font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 px-6 pb-5">
+              <button type="button" onClick={() => setDeleteSensorModalOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors border border-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteSensor}
+                disabled={sensorSubmitting || deleteSensorConfirm !== editSensorId}
+                className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-red-700 hover:bg-red-600 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed rounded-lg transition-colors"
+              >
+                {sensorSubmitting
+                  ? <><RefreshCw size={13} className="animate-spin" /> Eliminando…</>
+                  : <><Trash2 size={13} /> Eliminar Definitivamente</>}
               </button>
             </div>
           </div>

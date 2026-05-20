@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, time as dt_time, timezone
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -52,12 +52,14 @@ class SensorCreateIn(BaseModel):
 
 
 class RoomUpdateIn(BaseModel):
+    new_id: Optional[str] = None   # if set and differs from path param, renames the PK
     name: str
     max_capacity: int
     target_temp: float
 
 
 class SensorAssignIn(BaseModel):
+    new_id: Optional[str] = None   # if set and differs from path param, renames the PK
     room_id: str
 
 
@@ -100,6 +102,21 @@ def list_rooms(
 ):
     rooms = db.query(Room).order_by(Room.id).all()
     return [{"id": r.id, "name": r.name, "max_capacity": r.max_capacity, "target_temp": r.target_temp} for r in rooms]
+
+
+@router.get("/rooms/{room_id}/impact")
+def get_room_impact(
+    room_id: str,
+    db: Session = Depends(get_db_sql),
+    current_user: User = Depends(get_current_user),
+):
+    """Return relational impact counts before a destructive room delete."""
+    _require_admin(current_user)
+    if not db.query(Room).filter(Room.id == room_id).first():
+        raise HTTPException(status_code=404, detail=f"Room id='{room_id}' not found.")
+    reservations_count = db.query(Reservation).filter(Reservation.room_id == room_id).count()
+    sensors_count = db.query(SensorDevice).filter(SensorDevice.room_id == room_id).count()
+    return {"reservations_count": reservations_count, "sensors_count": sensors_count}
 
 
 @router.get("/rooms/{room_id}")
@@ -150,26 +167,111 @@ def update_room(
     db: Session = Depends(get_db_sql),
     current_user: User = Depends(get_current_user),
 ):
+    """Update room fields. If payload.new_id differs from room_id, performs a safe PK
+    rename: inserts new Room, re-parents all FK children (Schedule, SensorDevice,
+    Reservation) via bulk UPDATE inside the same transaction, then deletes old Room.
+    db.flush() after the INSERT ensures the new PK exists before child FKs are updated.
+    """
     _require_admin(current_user)
     room = db.query(Room).filter(Room.id == room_id).first()
     if not room:
         raise HTTPException(status_code=404, detail=f"Room id='{room_id}' not found.")
-    # Check name uniqueness only if name actually changed
+
     if payload.name != room.name:
         if db.query(Room).filter(Room.name == payload.name).first():
             raise HTTPException(status_code=409, detail=f"Room name='{payload.name}' already exists.")
-    room.name = payload.name
-    room.max_capacity = payload.max_capacity
-    room.target_temp = payload.target_temp
+
+    new_id = (payload.new_id or "").strip() or None
+
     try:
+        if new_id and new_id != room_id:
+            if db.query(Room).filter(Room.id == new_id).first():
+                raise HTTPException(status_code=409, detail=f"Room id='{new_id}' already exists.")
+            # Step 1: insert new room so the FK target exists before children are moved
+            new_room = Room(id=new_id, name=payload.name, max_capacity=payload.max_capacity, target_temp=payload.target_temp)
+            db.add(new_room)
+            db.flush()
+            # Step 2: re-parent all FK children to new_id
+            db.query(Schedule).filter(Schedule.room_id == room_id).update({"room_id": new_id}, synchronize_session="fetch")
+            db.query(SensorDevice).filter(SensorDevice.room_id == room_id).update({"room_id": new_id}, synchronize_session="fetch")
+            db.query(Reservation).filter(Reservation.room_id == room_id).update({"room_id": new_id}, synchronize_session="fetch")
+            # Step 3: remove old room (no children reference it after step 2)
+            db.expire(room)
+            db.delete(room)
+            db.commit()
+            logger.info("Admin '%s' renamed room '%s' → '%s'.", current_user.username, room_id, new_id)
+            return {"id": new_id, "name": payload.name, "max_capacity": payload.max_capacity, "target_temp": payload.target_temp}
+
+        # Normal update — no PK change
+        room.name = payload.name
+        room.max_capacity = payload.max_capacity
+        room.target_temp = payload.target_temp
         db.commit()
         db.refresh(room)
+    except HTTPException:
+        raise
     except SQLAlchemyError as exc:
         db.rollback()
         logger.error("DB error updating room: %s", exc)
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
+
     logger.info("Admin '%s' updated room '%s'.", current_user.username, room.id)
     return {"id": room.id, "name": room.name, "max_capacity": room.max_capacity, "target_temp": room.target_temp}
+
+
+@router.delete("/rooms/{room_id}", status_code=200)
+def delete_room(
+    room_id: str,
+    delete_reservations: bool = False,
+    db: Session = Depends(get_db_sql),
+    current_user: User = Depends(get_current_user),
+):
+    """Destructive room delete.
+
+    Sensors are always detached (room_id → NULL) — physical hardware records are
+    preserved as an immutable IoT audit trail regardless of room lifecycle.
+
+    delete_reservations=False (default): aborts with 400 if active reservations exist.
+    delete_reservations=True: bulk-deletes all reservations before removing the room.
+    """
+    _require_admin(current_user)
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail=f"Room id='{room_id}' not found.")
+
+    reservation_count = db.query(Reservation).filter(Reservation.room_id == room_id).count()
+    if reservation_count > 0 and not delete_reservations:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Room '{room_id}' has {reservation_count} reservation(s). "
+                   "Pass delete_reservations=true to remove them along with the room.",
+        )
+
+    try:
+        # Always detach sensors first — bulk UPDATE bypasses "delete-orphan" cascade so
+        # sensor records survive; room_id becomes NULL (orphan, available for reassignment).
+        db.query(SensorDevice).filter(SensorDevice.room_id == room_id).update(
+            {"room_id": None}, synchronize_session="fetch"
+        )
+
+        if delete_reservations:
+            db.query(Reservation).filter(Reservation.room_id == room_id).delete(synchronize_session="fetch")
+
+        # expire() clears stale ORM relationship collections built before the bulk ops above,
+        # so SQLAlchemy's cascade="all, delete-orphan" sees the correct (empty) state.
+        db.expire(room)
+        db.delete(room)
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.error("DB error deleting room '%s': %s", room_id, exc)
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+
+    logger.info(
+        "Admin '%s' deleted room '%s' (delete_reservations=%s).",
+        current_user.username, room_id, delete_reservations,
+    )
+    return {"deleted": room_id}
 
 
 @router.put("/sensors/{sensor_id}")
@@ -179,30 +281,73 @@ def reassign_sensor(
     db: Session = Depends(get_db_sql),
     current_user: User = Depends(get_current_user),
 ):
+    """Reassign sensor to a room. If payload.new_id differs from sensor_id, performs a
+    safe PK rename via delete-insert (no other tables have FK references to sensor_devices.id).
+    """
     _require_admin(current_user)
     device = db.query(SensorDevice).filter(SensorDevice.id == sensor_id).first()
     if not device:
         raise HTTPException(status_code=404, detail=f"Sensor id='{sensor_id}' not found.")
     if not db.query(Room).filter(Room.id == payload.room_id).first():
         raise HTTPException(status_code=404, detail=f"Room id='{payload.room_id}' not found.")
-    device.room_id = payload.room_id
+
+    new_id = (payload.new_id or "").strip() or None
+
     try:
+        if new_id and new_id != sensor_id:
+            if db.query(SensorDevice).filter(SensorDevice.id == new_id).first():
+                raise HTTPException(status_code=409, detail=f"Sensor id='{new_id}' already exists.")
+            new_device = SensorDevice(
+                id=new_id,
+                room_id=payload.room_id,
+                is_active=device.is_active,
+                control_enabled=device.control_enabled,
+            )
+            db.add(new_device)
+            db.delete(device)
+            db.commit()
+            db.refresh(new_device)
+            logger.info("Admin '%s' renamed sensor '%s' → '%s' (room '%s').", current_user.username, sensor_id, new_id, payload.room_id)
+            return {"sensor_id": new_device.id, "room_id": new_device.room_id, "is_active": new_device.is_active, "control_enabled": new_device.control_enabled}
+
+        device.room_id = payload.room_id
         db.commit()
         db.refresh(device)
+    except HTTPException:
+        raise
     except SQLAlchemyError as exc:
         db.rollback()
         logger.error("DB error reassigning sensor: %s", exc)
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
-    logger.info(
-        "Admin '%s' reassigned sensor '%s' → room '%s'.",
-        current_user.username, device.id, device.room_id,
-    )
-    return {
-        "sensor_id": device.id,
-        "room_id": device.room_id,
-        "is_active": device.is_active,
-        "control_enabled": device.control_enabled,
-    }
+
+    logger.info("Admin '%s' reassigned sensor '%s' → room '%s'.", current_user.username, device.id, device.room_id)
+    return {"sensor_id": device.id, "room_id": device.room_id, "is_active": device.is_active, "control_enabled": device.control_enabled}
+
+
+@router.delete("/sensors/{sensor_id}", status_code=200)
+def delete_sensor(
+    sensor_id: str,
+    db: Session = Depends(get_db_sql),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete a physical sensor from PostgreSQL.
+
+    Historical readings in MongoDB are intentionally preserved as an immutable
+    audit trail of the IoT hardware that was installed.
+    """
+    _require_admin(current_user)
+    device = db.query(SensorDevice).filter(SensorDevice.id == sensor_id).first()
+    if not device:
+        raise HTTPException(status_code=404, detail=f"Sensor id='{sensor_id}' not found.")
+    try:
+        db.delete(device)
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.error("DB error deleting sensor '%s': %s", sensor_id, exc)
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+    logger.info("Admin '%s' deleted sensor '%s'.", current_user.username, sensor_id)
+    return {"deleted": sensor_id}
 
 
 @router.post("/setup-rooms", status_code=201)

@@ -49,7 +49,8 @@ class SensorDevice(Base):
     __tablename__ = "sensor_devices"
 
     id = Column(String, primary_key=True)           # "sensor-001" — matches incoming sensor_id
-    room_id = Column(String, ForeignKey("rooms.id"), nullable=False)
+    # nullable=True: allows detaching from a room (cascade_sensors=True on room delete)
+    room_id = Column(String, ForeignKey("rooms.id"), nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     control_enabled = Column(Boolean, nullable=False, default=True)
 
