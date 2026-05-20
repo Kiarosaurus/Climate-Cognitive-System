@@ -104,13 +104,15 @@ def _run_migrations(engine, text):
                 ALTER TABLE reservations ALTER COLUMN room_id TYPE VARCHAR USING room_id::VARCHAR;
                 ALTER TABLE schedules ADD CONSTRAINT schedules_room_id_fkey
                     FOREIGN KEY (room_id) REFERENCES rooms(id);
-                ALTER TABLE sensor_devices ADD CONSTRAINT sensor_devices_room_id_fkey
-                    FOREIGN KEY (room_id) REFERENCES rooms(id);
-                ALTER TABLE reservations ADD CONSTRAINT reservations_room_id_fkey
-                    FOREIGN KEY (room_id) REFERENCES rooms(id);
             END IF;
         END $$;
         """,
+        # Orphan-audit strategy: sensor_devices and reservations must NOT have a hard FK
+        # on room_id so that deleting a Room leaves those rows intact with the original
+        # room_id string (historical audit trail). Schedules keep their FK because they
+        # are tightly coupled config that must cascade-delete with the room.
+        "ALTER TABLE sensor_devices DROP CONSTRAINT IF EXISTS sensor_devices_room_id_fkey",
+        "ALTER TABLE reservations   DROP CONSTRAINT IF EXISTS reservations_room_id_fkey",
     ]
     try:
         with engine.begin() as conn:

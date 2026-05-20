@@ -24,8 +24,9 @@ interface SensorDevice {
 }
 
 interface Toast { type: 'success' | 'error'; message: string }
-interface EditRoomForm { new_id: string; name: string; max_capacity: number; target_temp: number }
-interface RoomImpact { reservations_count: number; sensors_count: number }
+interface EditRoomForm { new_id: string; name: string; max_capacity: string; target_temp: string }
+interface RoomImpact   { reservations_count: number; sensors_count: number }
+interface OrphanData  { reservations_count: number; sensors_count: number }
 
 type RoomTab   = 'register' | 'edit'
 type SensorTab = 'register' | 'edit'
@@ -94,12 +95,12 @@ export default function Infrastructure() {
 
   // ── Register room ─────────────────────────────────────────────────────────
   const [regRoomForm, setRegRoomForm] = useState({
-    id: '', name: '', max_capacity: 30, target_temp: 22,
+    id: '', name: '', max_capacity: '30', target_temp: '22',
   })
 
   // ── Edit room ─────────────────────────────────────────────────────────────
   const [editRoomId,       setEditRoomId]       = useState('')
-  const [editRoomForm,     setEditRoomForm]     = useState<EditRoomForm>({ new_id: '', name: '', max_capacity: 30, target_temp: 22 })
+  const [editRoomForm,     setEditRoomForm]     = useState<EditRoomForm>({ new_id: '', name: '', max_capacity: '30', target_temp: '22' })
   const [editRoomModalOpen, setEditRoomModalOpen] = useState(false)
   const [pendingRoom, setPendingRoom] = useState<{ original: Room; form: EditRoomForm } | null>(null)
 
@@ -115,12 +116,20 @@ export default function Infrastructure() {
     original: SensorDevice; newSensorId: string; newRoomId: string; newRoomName: string
   } | null>(null)
 
+  // ── Edit room cascade flags (shown in confirmation modal) ────────────────
+  const [cascadeReservations, setCascadeReservations] = useState(true)
+  const [cascadeSensors,      setCascadeSensors]      = useState(true)
+
   // ── Delete room modal ─────────────────────────────────────────────────────
   const [deleteRoomModalOpen,  setDeleteRoomModalOpen]  = useState(false)
   const [roomImpact,           setRoomImpact]           = useState<RoomImpact | null>(null)
   const [impactLoading,        setImpactLoading]        = useState(false)
   const [deleteRoomConfirm,    setDeleteRoomConfirm]    = useState('')
-  const [deleteReservations,   setDeleteReservations]   = useState(false)
+
+  // ── Orphan-inheritance warning modal (register room flow) ─────────────────
+  const [orphanWarningOpen, setOrphanWarningOpen] = useState(false)
+  const [orphanData,        setOrphanData]        = useState<OrphanData | null>(null)
+  const [orphanConfirm,     setOrphanConfirm]     = useState('')
 
   // ── Delete sensor modal ───────────────────────────────────────────────────
   const [deleteSensorModalOpen, setDeleteSensorModalOpen] = useState(false)
@@ -159,26 +168,58 @@ export default function Infrastructure() {
   function selectEditRoom(id: string) {
     setEditRoomId(id)
     const room = rooms.find(r => r.id === id)
-    if (room) setEditRoomForm({ new_id: room.id, name: room.name, max_capacity: room.max_capacity, target_temp: room.target_temp })
+    if (room) setEditRoomForm({ new_id: room.id, name: room.name, max_capacity: String(room.max_capacity), target_temp: String(room.target_temp) })
+  }
+
+  async function doRegisterRoom() {
+    await api.post('/admin/rooms', {
+      id: regRoomForm.id.trim(),
+      name: regRoomForm.name.trim(),
+      max_capacity: Number(regRoomForm.max_capacity) || 0,
+      target_temp: Number(regRoomForm.target_temp) || 0,
+    })
+    showToast('success', `Aula '${regRoomForm.id.trim()}' registrada correctamente.`)
+    setRegRoomForm({ id: '', name: '', max_capacity: '30', target_temp: '22' })
+    await refreshRooms()
   }
 
   async function handleRegisterRoom(e: React.FormEvent) {
     e.preventDefault()
+    const id = regRoomForm.id.trim()
+    if (!id) return
     setRoomSubmitting(true)
     try {
-      await api.post('/admin/rooms', {
-        id: regRoomForm.id.trim(),
-        name: regRoomForm.name.trim(),
-        max_capacity: regRoomForm.max_capacity,
-        target_temp: regRoomForm.target_temp,
-      })
-      showToast('success', `Aula '${regRoomForm.id}' registrada correctamente.`)
-      setRegRoomForm({ id: '', name: '', max_capacity: 30, target_temp: 22 })
-      await refreshRooms()
+      const { data } = await api.get<{ has_orphans: boolean; reservations_count: number; sensors_count: number }>(
+        `/admin/rooms/check-orphans/${encodeURIComponent(id)}`
+      )
+      if (data.has_orphans) {
+        setOrphanData({ reservations_count: data.reservations_count, sensors_count: data.sensors_count })
+        setOrphanConfirm('')
+        setOrphanWarningOpen(true)
+        return  // pause — user must confirm inheritance in the warning modal
+      }
+      await doRegisterRoom()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       showToast('error', detail ?? 'No se pudo registrar el aula.')
-    } finally { setRoomSubmitting(false) }
+    } finally {
+      setRoomSubmitting(false)
+    }
+  }
+
+  async function confirmOrphanInheritance() {
+    if (orphanConfirm !== regRoomForm.id.trim()) return
+    setOrphanWarningOpen(false)
+    setOrphanData(null)
+    setRoomSubmitting(true)
+    try {
+      await doRegisterRoom()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      showToast('error', detail ?? 'No se pudo registrar el aula.')
+    } finally {
+      setRoomSubmitting(false)
+    }
   }
 
   function openEditRoomModal(e: React.FormEvent) {
@@ -187,6 +228,8 @@ export default function Infrastructure() {
     const original = rooms.find(r => r.id === editRoomId)
     if (!original) return
     setPendingRoom({ original, form: { ...editRoomForm } })
+    setCascadeReservations(true)
+    setCascadeSensors(true)
     setEditRoomModalOpen(true)
   }
 
@@ -196,12 +239,18 @@ export default function Infrastructure() {
     setEditRoomModalOpen(false)
     const idChanged = pendingRoom.form.new_id && pendingRoom.form.new_id !== pendingRoom.original.id
     try {
-      await api.put(`/admin/rooms/${pendingRoom.original.id}`, pendingRoom.form)
+      await api.put(`/admin/rooms/${pendingRoom.original.id}`, {
+        ...pendingRoom.form,
+        max_capacity: Number(pendingRoom.form.max_capacity) || 0,
+        target_temp: Number(pendingRoom.form.target_temp) || 0,
+      }, {
+        params: { cascade_sensors: cascadeSensors, cascade_reservations: cascadeReservations },
+      })
       const label = idChanged ? pendingRoom.form.new_id : pendingRoom.original.id
       showToast('success', `Aula '${label}' actualizada correctamente.`)
       setPendingRoom(null)
       setEditRoomId('')
-      setEditRoomForm({ new_id: '', name: '', max_capacity: 30, target_temp: 22 })
+      setEditRoomForm({ new_id: '', name: '', max_capacity: '30', target_temp: '22' })
       await refreshRooms()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -280,7 +329,6 @@ export default function Infrastructure() {
     if (!editRoomId) return
     setDeleteRoomModalOpen(true)
     setDeleteRoomConfirm('')
-    setDeleteReservations(false)
     setRoomImpact(null)
     setImpactLoading(true)
     try {
@@ -298,12 +346,10 @@ export default function Infrastructure() {
     setRoomSubmitting(true)
     setDeleteRoomModalOpen(false)
     try {
-      await api.delete(`/admin/rooms/${editRoomId}`, {
-        params: { delete_reservations: deleteReservations },
-      })
+      await api.delete(`/admin/rooms/${editRoomId}`)
       showToast('success', `Aula '${editRoomId}' eliminada definitivamente.`)
       setEditRoomId('')
-      setEditRoomForm({ new_id: '', name: '', max_capacity: 30, target_temp: 22 })
+      setEditRoomForm({ new_id: '', name: '', max_capacity: '30', target_temp: '22' })
       setDeleteRoomConfirm('')
       setRoomImpact(null)
       await Promise.all([refreshRooms(), refreshDevices()])
@@ -347,6 +393,7 @@ export default function Infrastructure() {
   const currentDevice = devices.find(d => d.sensor_id === editSensorId) ?? null
 
   const inputCls = "w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 transition placeholder-slate-500"
+  const numInputCls = `${inputCls} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`
   const labelCls = "block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide"
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -388,7 +435,7 @@ export default function Infrastructure() {
         </div>
       ) : (
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch h-[calc(100vh-7rem)] min-h-[calc(100vh-7rem)] max-h-[calc(100vh-7rem)]">
 
           {/* ── Left column: Aulas ───────────────────────────────────────────── */}
           <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden flex flex-col h-full">
@@ -410,12 +457,12 @@ export default function Infrastructure() {
               />
             </div>
 
-            <div className="p-5 flex flex-col flex-1">
+            <div className="p-5 flex flex-col flex-1 overflow-hidden">
 
               {/* ── Registrar Aula ────────────────────────────────────────── */}
               {roomTab === 'register' && (
-                <form onSubmit={handleRegisterRoom} className="flex flex-col flex-1 justify-between">
-                  <div className="space-y-4 flex-1">
+                <form onSubmit={handleRegisterRoom} className="flex flex-col flex-1 justify-between overflow-hidden">
+                  <div className="flex-1 min-h-0 overflow-y-auto pr-2 space-y-4">
                     <div>
                       <label className={labelCls}>ID del Aula</label>
                       <input type="text" required placeholder="ej. AULA-101"
@@ -437,16 +484,18 @@ export default function Infrastructure() {
                         <label className={labelCls}>Capacidad Máxima</label>
                         <input type="number" required min={1}
                           value={regRoomForm.max_capacity}
-                          onChange={e => setRegRoomForm(f => ({ ...f, max_capacity: Number(e.target.value) }))}
-                          className={inputCls}
+                          onChange={e => setRegRoomForm(f => ({ ...f, max_capacity: e.target.value }))}
+                          onBlur={e => setRegRoomForm(f => ({ ...f, max_capacity: e.target.value === '' ? '0' : e.target.value }))}
+                          className={numInputCls}
                         />
                       </div>
                       <div>
                         <label className={labelCls}>Temp. Objetivo (°C)</label>
                         <input type="number" required min={10} max={35} step={0.5}
                           value={regRoomForm.target_temp}
-                          onChange={e => setRegRoomForm(f => ({ ...f, target_temp: Number(e.target.value) }))}
-                          className={inputCls}
+                          onChange={e => setRegRoomForm(f => ({ ...f, target_temp: e.target.value }))}
+                          onBlur={e => setRegRoomForm(f => ({ ...f, target_temp: e.target.value === '' ? '0' : e.target.value }))}
+                          className={numInputCls}
                         />
                       </div>
                     </div>
@@ -465,8 +514,8 @@ export default function Infrastructure() {
 
               {/* ── Editar Aula ───────────────────────────────────────────── */}
               {roomTab === 'edit' && (
-                <form onSubmit={openEditRoomModal} className="flex flex-col flex-1 justify-between">
-                  <div className="space-y-4 flex-1">
+                <form onSubmit={openEditRoomModal} className="flex flex-col flex-1 justify-between overflow-hidden">
+                  <div className="flex-1 min-h-0 overflow-y-auto pr-2 space-y-4">
                     <SearchableSelect
                       options={roomOptions}
                       value={editRoomId}
@@ -506,16 +555,18 @@ export default function Infrastructure() {
                             <label className={labelCls}>Capacidad Máxima</label>
                             <input type="number" required min={1}
                               value={editRoomForm.max_capacity}
-                              onChange={e => setEditRoomForm(f => ({ ...f, max_capacity: Number(e.target.value) }))}
-                              className={inputCls}
+                              onChange={e => setEditRoomForm(f => ({ ...f, max_capacity: e.target.value }))}
+                              onBlur={e => setEditRoomForm(f => ({ ...f, max_capacity: e.target.value === '' ? '0' : e.target.value }))}
+                              className={numInputCls}
                             />
                           </div>
                           <div>
                             <label className={labelCls}>Temp. Objetivo (°C)</label>
                             <input type="number" required min={10} max={35} step={0.5}
                               value={editRoomForm.target_temp}
-                              onChange={e => setEditRoomForm(f => ({ ...f, target_temp: Number(e.target.value) }))}
-                              className={inputCls}
+                              onChange={e => setEditRoomForm(f => ({ ...f, target_temp: e.target.value }))}
+                              onBlur={e => setEditRoomForm(f => ({ ...f, target_temp: e.target.value === '' ? '0' : e.target.value }))}
+                              className={numInputCls}
                             />
                           </div>
                         </div>
@@ -566,12 +617,12 @@ export default function Infrastructure() {
               />
             </div>
 
-            <div className="p-5 flex flex-col flex-1">
+            <div className="p-5 flex flex-col flex-1 overflow-hidden">
 
               {/* ── Registrar Sensor ──────────────────────────────────────── */}
               {sensorTab === 'register' && (
-                <form onSubmit={handleRegisterSensor} className="flex flex-col flex-1 justify-between">
-                  <div className="space-y-4 flex-1">
+                <form onSubmit={handleRegisterSensor} className="flex flex-col flex-1 justify-between overflow-hidden">
+                  <div className="flex-1 min-h-0 overflow-y-auto pr-2 space-y-4">
                     <div>
                       <label className={labelCls}>ID del Sensor</label>
                       <input type="text" required placeholder="ej. sensor-lab-101-a"
@@ -621,8 +672,8 @@ export default function Infrastructure() {
 
               {/* ── Editar Sensor ─────────────────────────────────────────── */}
               {sensorTab === 'edit' && (
-                <form onSubmit={openEditSensorModal} className="flex flex-col flex-1 justify-between">
-                  <div className="space-y-4 flex-1">
+                <form onSubmit={openEditSensorModal} className="flex flex-col flex-1 justify-between overflow-hidden">
+                  <div className="flex-1 min-h-0 overflow-y-auto pr-2 space-y-4">
                     <SearchableSelect
                       options={sensorOptions}
                       value={editSensorId}
@@ -747,32 +798,53 @@ export default function Infrastructure() {
                   changed={pendingRoom.form.name !== pendingRoom.original.name}
                 />
                 <DataRow label="Capacidad" value={`${pendingRoom.form.max_capacity} personas`}
-                  changed={pendingRoom.form.max_capacity !== pendingRoom.original.max_capacity}
+                  changed={Number(pendingRoom.form.max_capacity) !== pendingRoom.original.max_capacity}
                 />
                 <DataRow label="Temperatura Objetivo" value={`${pendingRoom.form.target_temp} °C`}
-                  changed={pendingRoom.form.target_temp !== pendingRoom.original.target_temp}
+                  changed={Number(pendingRoom.form.target_temp) !== pendingRoom.original.target_temp}
                 />
               </div>
             </div>
 
-            {/* Cascade-impact notice — only when ID is being renamed */}
+            {/* Cascade-impact options — only when ID is being renamed */}
             {pendingRoom && !!pendingRoom.form.new_id && pendingRoom.form.new_id !== pendingRoom.original.id && (
-              <div className="mx-6 mb-4 bg-amber-950/40 border border-amber-700/50 rounded-xl px-4 py-3 space-y-2">
+              <div className="mx-6 mb-4 bg-amber-950/40 border border-amber-700/50 rounded-xl px-4 py-3 space-y-3">
                 <p className="text-xs font-semibold text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
-                  <TriangleAlert size={12} className="shrink-0" /> Impacto en cascada del cambio de ID
+                  <TriangleAlert size={12} className="shrink-0" /> Actualización en cascada del cambio de ID
                 </p>
-                <label className="flex items-center gap-2.5 cursor-default pointer-events-none">
-                  <input type="checkbox" checked onChange={() => {}}
-                    className="w-3.5 h-3.5 rounded border-amber-600 bg-amber-900/30 accent-amber-500 shrink-0"
+                <p className="text-xs text-amber-300/70 leading-relaxed">
+                  Desmarca para dejar esos registros atados al ID anterior — quedarán como huérfanos históricos de auditoría.
+                </p>
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={cascadeReservations}
+                    onChange={e => setCascadeReservations(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded border-amber-600 bg-amber-900/30 accent-amber-500 shrink-0 cursor-pointer"
                   />
-                  <span className="text-xs text-amber-200">Actualizar el ID en todas las reservas asociadas a esta aula.</span>
+                  <span className="text-xs text-amber-200 select-none">
+                    Modificar el ID en todas las reservas asociadas a esta aula.
+                  </span>
                 </label>
-                <label className="flex items-center gap-2.5 cursor-default pointer-events-none">
-                  <input type="checkbox" checked onChange={() => {}}
-                    className="w-3.5 h-3.5 rounded border-amber-600 bg-amber-900/30 accent-amber-500 shrink-0"
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={cascadeSensors}
+                    onChange={e => setCascadeSensors(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded border-amber-600 bg-amber-900/30 accent-amber-500 shrink-0 cursor-pointer"
                   />
-                  <span className="text-xs text-amber-200">Actualizar la asociación de ID en todos los sensores instalados.</span>
+                  <span className="text-xs text-amber-200 select-none">
+                    Modificar la asociación de ID en todos los sensores instalados.
+                  </span>
                 </label>
+                {(!cascadeReservations || !cascadeSensors) && (
+                  <p className="text-xs text-slate-400 flex items-center gap-1.5 pt-1">
+                    <Info size={11} className="shrink-0 text-slate-500" />
+                    Los registros desmarcados conservarán el ID{' '}
+                    <span className="font-mono text-amber-400">{pendingRoom.original.id}</span>{' '}
+                    y serán accesibles via la auditoría de huérfanos.
+                  </p>
+                )}
               </div>
             )}
 
@@ -812,7 +884,7 @@ export default function Infrastructure() {
 
             <div className="px-6 py-5 space-y-5">
 
-              {/* Impact warning */}
+              {/* Impact — orphan info */}
               <div className="flex items-start gap-3 bg-red-950/50 border border-red-800/50 rounded-xl px-4 py-3">
                 <TriangleAlert size={16} className="text-red-400 shrink-0 mt-0.5" />
                 {impactLoading ? (
@@ -820,16 +892,24 @@ export default function Infrastructure() {
                     <RefreshCw size={12} className="animate-spin" /> Calculando impacto…
                   </p>
                 ) : (
-                  <div className="text-sm text-red-300 leading-relaxed space-y-1">
-                    <p>
-                      <strong>Advertencia:</strong> Esta aula tiene{' '}
-                      <span className="font-bold text-red-200">{roomImpact?.reservations_count ?? 0} reserva{(roomImpact?.reservations_count ?? 0) !== 1 ? 's' : ''}</span>.
+                  <div className="text-sm leading-relaxed space-y-1.5">
+                    <p className="text-red-300">
+                      <strong>Acción irreversible.</strong> La estructura del aula se eliminará de forma permanente.
                     </p>
+                    {(roomImpact?.reservations_count ?? 0) > 0 && (
+                      <p className="text-amber-300">
+                        <span className="font-bold">{roomImpact!.reservations_count} reserva{roomImpact!.reservations_count !== 1 ? 's' : ''}</span>{' '}
+                        quedarán como registros históricos huérfanos (auditoría).
+                      </p>
+                    )}
                     {(roomImpact?.sensors_count ?? 0) > 0 && (
                       <p className="text-amber-300">
-                        Los <span className="font-bold">{roomImpact!.sensors_count} sensores</span> asignados
-                        quedarán huérfanos automáticamente (sus registros se conservan).
+                        <span className="font-bold">{roomImpact!.sensors_count} sensor{roomImpact!.sensors_count !== 1 ? 'es' : ''}</span>{' '}
+                        quedarán sin asignación de aula (hardware IoT preservado).
                       </p>
+                    )}
+                    {(roomImpact?.reservations_count ?? 0) === 0 && (roomImpact?.sensors_count ?? 0) === 0 && (
+                      <p className="text-slate-400">Esta aula no tiene reservas ni sensores asociados.</p>
                     )}
                   </div>
                 )}
@@ -847,32 +927,6 @@ export default function Infrastructure() {
                   onChange={e => setDeleteRoomConfirm(e.target.value)}
                   className="w-full bg-black border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500/50 transition placeholder-slate-600 font-mono"
                 />
-              </div>
-
-              {/* Checkbox — only enabled when ID matches */}
-              <div className={`transition-opacity ${deleteRoomConfirm === editRoomId ? 'opacity-100' : 'opacity-30 pointer-events-none'}`}>
-                <label className="flex items-start gap-3 cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    checked={deleteReservations}
-                    onChange={e => setDeleteReservations(e.target.checked)}
-                    className="mt-0.5 w-4 h-4 rounded border-slate-600 bg-slate-800 text-red-500 focus:ring-red-500/50 cursor-pointer shrink-0"
-                  />
-                  <span className="text-sm text-slate-300 leading-relaxed group-hover:text-slate-100 transition-colors">
-                    Eliminar todas las reservas asociadas a esta aula.
-                    {(roomImpact?.reservations_count ?? 0) > 0 && (
-                      <span className="ml-1 text-xs text-red-400">
-                        ({roomImpact!.reservations_count} reserva{roomImpact!.reservations_count !== 1 ? 's' : ''})
-                      </span>
-                    )}
-                  </span>
-                </label>
-                {(roomImpact?.sensors_count ?? 0) > 0 && (
-                  <p className="mt-2 text-xs text-amber-400 flex items-center gap-1.5 pl-7">
-                    <Info size={11} className="shrink-0" />
-                    {roomImpact!.sensors_count} sensor{roomImpact!.sensors_count !== 1 ? 'es' : ''} quedarán sin asignar (se conservan como auditoría IoT).
-                  </p>
-                )}
               </div>
             </div>
 
@@ -1014,6 +1068,86 @@ export default function Infrastructure() {
                 {sensorSubmitting
                   ? <><RefreshCw size={13} className="animate-spin" /> Eliminando…</>
                   : <><Trash2 size={13} /> Eliminar Definitivamente</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Herencia de huérfanos al registrar aula ───────────────── */}
+      {orphanWarningOpen && orphanData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-amber-700/60 rounded-2xl shadow-2xl w-full max-w-lg">
+
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <TriangleAlert size={16} className="text-amber-400" /> Historial Persistente Detectado
+              </h3>
+              <button
+                onClick={() => { setOrphanWarningOpen(false); setOrphanData(null) }}
+                className="text-slate-500 hover:text-slate-200 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-5">
+
+              <div className="bg-amber-950/40 border border-amber-700/50 rounded-xl px-4 py-4 space-y-2">
+                <p className="text-sm text-amber-200 leading-relaxed">
+                  <span className="font-bold text-amber-300">⚠ ATENCIÓN:</span>{' '}
+                  El ID de aula{' '}
+                  <span className="font-mono text-white bg-slate-800 px-1.5 py-0.5 rounded text-xs">{regRoomForm.id.trim()}</span>{' '}
+                  cuenta con historial persistente en el sistema.
+                </p>
+                <div className="flex gap-4 pt-1">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="font-bold text-amber-300">{orphanData.reservations_count}</span>
+                    <span className="text-amber-200/70">reserva{orphanData.reservations_count !== 1 ? 's' : ''} huérfana{orphanData.reservations_count !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="font-bold text-amber-300">{orphanData.sensors_count}</span>
+                    <span className="text-amber-200/70">sensor{orphanData.sensors_count !== 1 ? 'es' : ''} huérfano{orphanData.sensors_count !== 1 ? 's' : ''}</span>
+                  </div>
+                </div>
+                <p className="text-xs text-amber-300/70 leading-relaxed pt-1">
+                  Si continúas, estos elementos se vincularán automáticamente al aula nueva al compartir el mismo ID.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">
+                  Escribe el ID del aula para confirmar la re-asociación o modifica el ID en el formulario anterior para evitarlo
+                </label>
+                <input
+                  type="text"
+                  placeholder={regRoomForm.id.trim()}
+                  value={orphanConfirm}
+                  onChange={e => setOrphanConfirm(e.target.value)}
+                  className="w-full bg-black border border-amber-700/50 rounded-lg px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/40 transition placeholder-slate-600 font-mono"
+                  autoFocus
+                />
+              </div>
+
+            </div>
+
+            <div className="flex items-center justify-end gap-3 px-6 pb-5">
+              <button
+                type="button"
+                onClick={() => { setOrphanWarningOpen(false); setOrphanData(null) }}
+                className="px-4 py-2 text-sm font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors border border-slate-700"
+              >
+                Cancelar — modificar ID
+              </button>
+              <button
+                type="button"
+                onClick={confirmOrphanInheritance}
+                disabled={orphanConfirm !== regRoomForm.id.trim() || roomSubmitting}
+                className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed rounded-lg transition-colors"
+              >
+                {roomSubmitting
+                  ? <><RefreshCw size={13} className="animate-spin" /> Creando…</>
+                  : <><CheckCircle2 size={14} /> Aceptar y Enlazar</>}
               </button>
             </div>
           </div>

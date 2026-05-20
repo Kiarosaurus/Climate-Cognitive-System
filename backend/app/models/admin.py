@@ -28,8 +28,8 @@ class Room(Base):
     target_temp = Column(Float, nullable=False)
 
     schedules = relationship("Schedule", back_populates="room", cascade="all, delete-orphan")
-    devices = relationship("SensorDevice", back_populates="room", cascade="all, delete-orphan")
-    reservations = relationship("Reservation", back_populates="room", cascade="all, delete-orphan")
+    # SensorDevice and Reservation rows survive room deletion as historical audit orphans.
+    # Relationships are read-only (viewonly) — no cascade, no back_populates on Room side.
 
 
 class Schedule(Base):
@@ -49,23 +49,32 @@ class SensorDevice(Base):
     __tablename__ = "sensor_devices"
 
     id = Column(String, primary_key=True)           # "sensor-001" — matches incoming sensor_id
-    # nullable=True: allows detaching from a room (cascade_sensors=True on room delete)
-    room_id = Column(String, ForeignKey("rooms.id"), nullable=True)
+    # No FK constraint — room_id preserved as an audit string even after room deletion.
+    room_id = Column(String, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     control_enabled = Column(Boolean, nullable=False, default=True)
 
-    room = relationship("Room", back_populates="devices")
+    room = relationship(
+        "Room",
+        primaryjoin="foreign(SensorDevice.room_id) == Room.id",
+        viewonly=True,
+    )
 
 
 class Reservation(Base):
     __tablename__ = "reservations"
 
     id = Column(Integer, primary_key=True, index=True)
-    room_id = Column(String, ForeignKey("rooms.id"), nullable=False)
+    # No FK constraint — room_id preserved as an audit string even after room deletion.
+    room_id = Column(String, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     start_time = Column(DateTime, nullable=False)
     end_time = Column(DateTime, nullable=False)
     expected_occupancy = Column(Integer, nullable=False)
 
-    room = relationship("Room", back_populates="reservations")
+    room = relationship(
+        "Room",
+        primaryjoin="foreign(Reservation.room_id) == Room.id",
+        viewonly=True,
+    )
     user = relationship("User", back_populates="reservations")

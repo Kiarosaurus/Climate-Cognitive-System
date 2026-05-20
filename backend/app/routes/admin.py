@@ -110,13 +110,34 @@ def get_room_impact(
     db: Session = Depends(get_db_sql),
     current_user: User = Depends(get_current_user),
 ):
-    """Return relational impact counts before a destructive room delete."""
+    """Pre-deletion impact counts for a room that still exists."""
     _require_admin(current_user)
     if not db.query(Room).filter(Room.id == room_id).first():
         raise HTTPException(status_code=404, detail=f"Room id='{room_id}' not found.")
     reservations_count = db.query(Reservation).filter(Reservation.room_id == room_id).count()
     sensors_count = db.query(SensorDevice).filter(SensorDevice.room_id == room_id).count()
     return {"reservations_count": reservations_count, "sensors_count": sensors_count}
+
+
+@router.get("/rooms/check-orphans/{room_id}")
+def check_orphans(
+    room_id: str,
+    db: Session = Depends(get_db_sql),
+    current_user: User = Depends(get_current_user),
+):
+    """Audit endpoint: count Reservation and SensorDevice rows whose room_id string
+    matches room_id but whose parent Room row no longer exists (historical orphans).
+    """
+    _require_admin(current_user)
+    room_exists = db.query(Room).filter(Room.id == room_id).first() is not None
+    reservations_count = db.query(Reservation).filter(Reservation.room_id == room_id).count()
+    sensors_count = db.query(SensorDevice).filter(SensorDevice.room_id == room_id).count()
+    has_orphans = (not room_exists) and (reservations_count > 0 or sensors_count > 0)
+    return {
+        "has_orphans": has_orphans,
+        "reservations_count": reservations_count,
+        "sensors_count": sensors_count,
+    }
 
 
 @router.get("/rooms/{room_id}")
@@ -164,13 +185,18 @@ def create_room(
 def update_room(
     room_id: str,
     payload: RoomUpdateIn,
+    cascade_sensors: bool = True,
+    cascade_reservations: bool = True,
     db: Session = Depends(get_db_sql),
     current_user: User = Depends(get_current_user),
 ):
     """Update room fields. If payload.new_id differs from room_id, performs a safe PK
-    rename: inserts new Room, re-parents all FK children (Schedule, SensorDevice,
-    Reservation) via bulk UPDATE inside the same transaction, then deletes old Room.
-    db.flush() after the INSERT ensures the new PK exists before child FKs are updated.
+    rename: inserts new Room, bulk-UPDATEs the chosen child tables to new_id, then
+    deletes the old Room row — all inside a single transaction.
+
+    cascade_sensors=False: SensorDevice rows keep the old room_id (become orphans).
+    cascade_reservations=False: Reservation rows keep the old room_id (become orphans).
+    Schedules are always re-parented — they are tightly coupled config, not audit data.
     """
     _require_admin(current_user)
     room = db.query(Room).filter(Room.id == room_id).first()
@@ -193,19 +219,24 @@ def update_room(
             if payload.name == room.name:
                 room.name = f"__renaming__{room_id}"
                 db.flush()
-            # Step 1: insert new room so the FK target exists before children are moved
+            # Step 1: insert new room so children can reference it immediately
             new_room = Room(id=new_id, name=payload.name, max_capacity=payload.max_capacity, target_temp=payload.target_temp)
             db.add(new_room)
             db.flush()
-            # Step 2: re-parent all FK children to new_id
+            # Step 2: re-parent children — schedules always, others per cascade flags
             db.query(Schedule).filter(Schedule.room_id == room_id).update({"room_id": new_id}, synchronize_session="fetch")
-            db.query(SensorDevice).filter(SensorDevice.room_id == room_id).update({"room_id": new_id}, synchronize_session="fetch")
-            db.query(Reservation).filter(Reservation.room_id == room_id).update({"room_id": new_id}, synchronize_session="fetch")
-            # Step 3: remove old room (no children reference it after step 2)
-            db.expire(room)
+            if cascade_sensors:
+                db.query(SensorDevice).filter(SensorDevice.room_id == room_id).update({"room_id": new_id}, synchronize_session="fetch")
+            if cascade_reservations:
+                db.query(Reservation).filter(Reservation.room_id == room_id).update({"room_id": new_id}, synchronize_session="fetch")
+            # Step 3: remove old room (schedules already re-parented; sensors/reservations
+            # may intentionally remain as orphans pointing to the old room_id string)
             db.delete(room)
             db.commit()
-            logger.info("Admin '%s' renamed room '%s' → '%s'.", current_user.username, room_id, new_id)
+            logger.info(
+                "Admin '%s' renamed room '%s' → '%s' (cascade_sensors=%s, cascade_reservations=%s).",
+                current_user.username, room_id, new_id, cascade_sensors, cascade_reservations,
+            )
             return {"id": new_id, "name": payload.name, "max_capacity": payload.max_capacity, "target_temp": payload.target_temp}
 
         # Normal update — no PK change
@@ -228,44 +259,23 @@ def update_room(
 @router.delete("/rooms/{room_id}", status_code=200)
 def delete_room(
     room_id: str,
-    delete_reservations: bool = False,
     db: Session = Depends(get_db_sql),
     current_user: User = Depends(get_current_user),
 ):
-    """Destructive room delete.
+    """Delete a room. Schedules are cascade-deleted (tightly coupled config data).
 
-    Sensors are always detached (room_id → NULL) — physical hardware records are
-    preserved as an immutable IoT audit trail regardless of room lifecycle.
-
-    delete_reservations=False (default): aborts with 400 if active reservations exist.
-    delete_reservations=True: bulk-deletes all reservations before removing the room.
+    Reservation and SensorDevice rows are intentionally left intact: their room_id
+    string is preserved as a historical audit reference (orphan records). No FK
+    constraint exists on those columns, so the DELETE succeeds without nullifying
+    or removing any child records.
     """
     _require_admin(current_user)
     room = db.query(Room).filter(Room.id == room_id).first()
     if not room:
         raise HTTPException(status_code=404, detail=f"Room id='{room_id}' not found.")
 
-    reservation_count = db.query(Reservation).filter(Reservation.room_id == room_id).count()
-    if reservation_count > 0 and not delete_reservations:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Room '{room_id}' has {reservation_count} reservation(s). "
-                   "Pass delete_reservations=true to remove them along with the room.",
-        )
-
     try:
-        # Always detach sensors first — bulk UPDATE bypasses "delete-orphan" cascade so
-        # sensor records survive; room_id becomes NULL (orphan, available for reassignment).
-        db.query(SensorDevice).filter(SensorDevice.room_id == room_id).update(
-            {"room_id": None}, synchronize_session="fetch"
-        )
-
-        if delete_reservations:
-            db.query(Reservation).filter(Reservation.room_id == room_id).delete(synchronize_session="fetch")
-
-        # expire() clears stale ORM relationship collections built before the bulk ops above,
-        # so SQLAlchemy's cascade="all, delete-orphan" sees the correct (empty) state.
-        db.expire(room)
+        db.query(Schedule).filter(Schedule.room_id == room_id).delete(synchronize_session="fetch")
         db.delete(room)
         db.commit()
     except SQLAlchemyError as exc:
@@ -273,10 +283,7 @@ def delete_room(
         logger.error("DB error deleting room '%s': %s", room_id, exc)
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
 
-    logger.info(
-        "Admin '%s' deleted room '%s' (delete_reservations=%s).",
-        current_user.username, room_id, delete_reservations,
-    )
+    logger.info("Admin '%s' deleted room '%s'.", current_user.username, room_id)
     return {"deleted": room_id}
 
 

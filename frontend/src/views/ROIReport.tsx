@@ -83,11 +83,12 @@ function KpiCard({ icon, label, value, sublabel, color }: KpiCardProps) {
 }
 
 const TOOLTIP_STYLE = {
-  backgroundColor: '#1e293b',
+  backgroundColor: '#0f172a',
   border: '1px solid #334155',
-  borderRadius: '8px',
+  borderRadius: '10px',
   color: '#e2e8f0',
   fontSize: 12,
+  boxShadow: '0 4px 24px rgba(0,0,0,0.6)',
 }
 
 export default function ROIReport() {
@@ -211,7 +212,7 @@ export default function ROIReport() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                   <XAxis dataKey="date" stroke="#64748b" tick={{ fontSize: 11 }} />
                   <YAxis stroke="#64748b" tick={{ fontSize: 11 }} unit=" kWh" />
-                  <Tooltip contentStyle={TOOLTIP_STYLE} />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'transparent' }} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Bar dataKey="Tradicional" fill="#f97316" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="Cognitivo"   fill="#22d3ee" radius={[4, 4, 0, 0]} />

@@ -101,7 +101,7 @@ export default function Reservations() {
     room_id: '',
     start_time: toLocalInputValue(nowPlus(5)),
     end_time: toLocalInputValue(nowPlus(65)),
-    expected_occupancy: 1,
+    expected_occupancy: '1',
   })
 
   const showToast = (type: Toast['type'], message: string) => {
@@ -158,7 +158,7 @@ export default function Reservations() {
         room_id: rooms.length > 0 ? String(rooms[0].id) : '',
         start_time: toLocalInputValue(nowPlus(5)),
         end_time: toLocalInputValue(nowPlus(65)),
-        expected_occupancy: 1,
+        expected_occupancy: '1',
       })
     }
   }
@@ -175,7 +175,7 @@ export default function Reservations() {
       room_id: String(r.room_id),
       start_time: toLocalInputValue(new Date(r.start_time)),
       end_time: toLocalInputValue(new Date(r.end_time)),
-      expected_occupancy: r.expected_occupancy,
+      expected_occupancy: String(r.expected_occupancy),
     })
   }
 
@@ -209,7 +209,7 @@ export default function Reservations() {
         ...f,
         start_time: toLocalInputValue(nowPlus(5)),
         end_time: toLocalInputValue(nowPlus(65)),
-        expected_occupancy: 1,
+        expected_occupancy: '1',
       }))
       fetchReservations()
     } catch (err: unknown) {
@@ -252,7 +252,7 @@ export default function Reservations() {
         room_id: rooms.length > 0 ? String(rooms[0].id) : '',
         start_time: toLocalInputValue(nowPlus(5)),
         end_time: toLocalInputValue(nowPlus(65)),
-        expected_occupancy: 1,
+        expected_occupancy: '1',
       })
       fetchReservations()
     } catch (err: unknown) {
@@ -266,6 +266,7 @@ export default function Reservations() {
   // ── Shared style tokens ───────────────────────────────────────────────────
 
   const inputCls = "w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 transition placeholder-slate-500"
+  const numInputCls = `${inputCls} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`
   const labelCls = "block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide"
 
   const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
@@ -461,8 +462,9 @@ export default function Reservations() {
                   min={1}
                   max={(Array.isArray(rooms) ? rooms : []).find(r => String(r.id) === String(form.room_id))?.max_capacity ?? 999}
                   value={form.expected_occupancy}
-                  onChange={e => setForm(f => ({ ...f, expected_occupancy: Number(e.target.value) }))}
-                  className={inputCls}
+                  onChange={e => setForm(f => ({ ...f, expected_occupancy: e.target.value }))}
+                  onBlur={e => setForm(f => ({ ...f, expected_occupancy: e.target.value === '' ? '1' : e.target.value }))}
+                  className={numInputCls}
                 />
               </div>
             </div>
