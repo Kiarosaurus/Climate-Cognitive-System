@@ -11,11 +11,18 @@ INTERVAL_SECONDS = 5
 
 
 def generate_reading(sensor_id: str) -> dict:
+    # 10 % chance of a CO spike to force anomaly detection (> 50 ppm EPA threshold)
+    co_ppm = (
+        round(random.uniform(55.0, 150.0), 2)
+        if random.random() < 0.1
+        else round(random.uniform(0.0, 10.0), 2)
+    )
     return {
         "sensor_id": sensor_id,
         "temperature": round(random.uniform(15.0, 45.0), 2),
         "humidity": round(random.uniform(30.0, 100.0), 2),
         "co2_ppm": round(random.uniform(350.0, 2000.0), 2),
+        "co_ppm": co_ppm,
         "timestamp": datetime.utcnow().isoformat(),
     }
 

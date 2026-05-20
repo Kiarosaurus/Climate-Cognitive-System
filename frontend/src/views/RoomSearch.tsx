@@ -34,14 +34,14 @@ function AcBadge({ status, loading }: { status: AcStatus; loading: boolean }) {
   if (status === 'ON') {
     return (
       <span className="flex items-center gap-1 text-xs font-semibold text-blue-300 bg-blue-900/40 border border-blue-500/30 px-2 py-0.5 rounded-full">
-        <Zap size={10} /> ON
+        <Zap size={10} /> Encendido
       </span>
     )
   }
   if (status === 'STANDBY') {
     return (
       <span className="flex items-center gap-1 text-xs text-slate-400 bg-slate-700/60 border border-slate-600 px-2 py-0.5 rounded-full">
-        <ZapOff size={10} /> Standby
+        <ZapOff size={10} /> En espera
       </span>
     )
   }

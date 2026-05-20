@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import {
   HardDrive, Building2, Radio, PlusCircle,
-  RefreshCw, AlertCircle, CheckCircle2, X, Info,
+  RefreshCw, AlertCircle, CheckCircle2, X, Info, DoorOpen,
 } from 'lucide-react'
 import api from '../api/client'
+import SearchableSelect from '../components/SearchableSelect'
 
 interface Room { id: string; name: string; max_capacity: number }
 interface Toast { type: 'success' | 'error'; message: string }
@@ -224,19 +225,13 @@ export default function AddDevices() {
                   No hay aulas registradas. Registra una antes de añadir sensores.
                 </div>
               ) : (
-                <select
-                  required
+                <SearchableSelect
+                  options={rooms.map(r => ({ value: r.id, label: `${r.id} — ${r.name}` }))}
                   value={sensorForm.room_id}
-                  onChange={e => setSensorForm(f => ({ ...f, room_id: e.target.value }))}
-                  className={inputCls}
-                >
-                  <option value="" disabled>Selecciona un aula…</option>
-                  {rooms.map(r => (
-                    <option key={r.id} value={r.id}>
-                      {r.id} — {r.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={v => setSensorForm(f => ({ ...f, room_id: v }))}
+                  placeholder="Selecciona un aula…"
+                  icon={<DoorOpen size={16} />}
+                />
               )}
             </div>
 

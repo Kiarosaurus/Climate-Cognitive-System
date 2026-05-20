@@ -8,7 +8,11 @@ logger = logging.getLogger(__name__)
 
 
 def detect_anomaly(reading: SensorReading) -> bool:
-    return reading.temperature > 40 or reading.humidity > 95
+    return (
+        reading.temperature > 40
+        or reading.humidity > 95
+        or reading.co_ppm > 50  # EPA alert threshold for CO
+    )
 
 
 def get_room_context(db_sql, sensor_id: str, reading_timestamp: datetime) -> dict | None:
@@ -59,7 +63,9 @@ def get_room_context(db_sql, sensor_id: str, reading_timestamp: datetime) -> dic
 
 async def save_reading(db, reading: SensorReading, cognitive_action: dict | None = None) -> str:
     doc = reading.model_dump()
-    doc["timestamp"] = reading.timestamp.isoformat()
+    # Always store naive UTC ISO string so MongoDB string comparison in $gte/$lte queries
+    # works consistently regardless of whether the client sent a 'Z' or '+00:00' timestamp.
+    doc["timestamp"] = reading.timestamp.replace(tzinfo=None).strftime("%Y-%m-%dT%H:%M:%S.%f")
     if cognitive_action is not None:
         doc["cognitive_action"] = cognitive_action
     result = await db["sensor_readings"].insert_one(doc)

@@ -6,7 +6,7 @@ import {
 } from 'recharts'
 import {
   ArrowLeft, Building2, RefreshCw, AlertCircle,
-  Zap, ZapOff, Cpu, Radio, SlidersHorizontal,
+  Zap, ZapOff, Cpu, Radio, SlidersHorizontal, WifiOff, CloudFog,
 } from 'lucide-react'
 import api from '../api/client'
 import { useAuth } from '../context/AuthContext'
@@ -20,7 +20,7 @@ interface RoomInfo {
 
 interface SensorDevice {
   sensor_id: string
-  room_id: number
+  room_id: string
   is_active: boolean
   control_enabled: boolean
   _updating?: boolean
@@ -31,6 +31,7 @@ interface SensorReading {
   temperature: number
   humidity: number
   co2_ppm: number | null
+  co_ppm: number | null
   timestamp: string
   cognitive_action?: {
     ac_status: string
@@ -96,15 +97,20 @@ export default function RoomDetail() {
   useEffect(() => {
     if (!id) return
     setLoading(true)
+    setError(null)
+
+    const fallbackReadings = { data: [] as SensorReading[] }
+    const fallbackDevices  = { data: [] as SensorDevice[] }
+
     Promise.all([
       api.get<RoomInfo>(`/admin/rooms/${id}`),
-      api.get<SensorReading[]>(`/sensors/?room_id=${id}&limit=40`),
-      api.get<SensorDevice[]>('/admin/devices'),
+      api.get<SensorReading[]>(`/sensors/?room_id=${id}&limit=40`).catch(() => fallbackReadings),
+      api.get<SensorDevice[]>('/admin/devices').catch(() => fallbackDevices),
     ])
       .then(([roomRes, readingsRes, devicesRes]) => {
         setRoom(roomRes.data)
-        setReadings(readingsRes.data)
-        setDevices(devicesRes.data.filter(d => d.room_id === Number(id)))
+        setReadings(readingsRes.data ?? [])
+        setDevices((devicesRes.data ?? []).filter(d => d.room_id === id))
       })
       .catch(err => setError(err?.response?.data?.detail ?? 'Error cargando datos del aula.'))
       .finally(() => setLoading(false))
@@ -155,10 +161,12 @@ export default function RoomDetail() {
     }
   }
 
-  const latest = readings[0] ?? null
+  const hasSensors = devices.length > 0 || readings.length > 0
+
+  const latest = (readings ?? [])[0] ?? null
   const isOn = latest?.cognitive_action?.ac_status === 'ON'
 
-  const chartData = [...readings].reverse().map(r => ({
+  const chartData = [...(readings ?? [])].reverse().map(r => ({
     time: new Date(r.timestamp).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' }),
     temperature: r.temperature,
     humidity: r.humidity,
@@ -173,17 +181,9 @@ export default function RoomDetail() {
     )
   }
 
-  if (error) {
-    return (
-      <div className="flex items-center gap-2 bg-red-900/30 border border-red-500/40 rounded-lg px-4 py-3 text-sm text-red-300 max-w-md">
-        <AlertCircle size={16} className="shrink-0" /> {error}
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header — always rendered */}
       <div className="flex items-center gap-4">
         <button
           onClick={() => navigate('/rooms')}
@@ -202,8 +202,33 @@ export default function RoomDetail() {
         </div>
       </div>
 
+      {/* Fatal error loading room info */}
+      {error && (
+        <div className="flex items-center gap-2 bg-red-900/30 border border-red-500/40 rounded-lg px-4 py-3 text-sm text-red-300">
+          <AlertCircle size={16} className="shrink-0" /> {error}
+        </div>
+      )}
+
+      {/* No sensors — empty state inside main container */}
+      {!error && !hasSensors && (
+        <div className="flex flex-col items-center justify-center gap-5 bg-slate-800 border border-slate-700 rounded-xl px-8 py-16 text-center">
+          <div className="w-16 h-16 rounded-full bg-slate-700/60 border border-slate-600 flex items-center justify-center">
+            <WifiOff size={28} className="text-slate-500" />
+          </div>
+          <div className="space-y-2 max-w-sm">
+            <h3 className="text-slate-200 font-semibold text-base">Aula sin sensores</h3>
+            <p className="text-slate-400 text-sm leading-relaxed">
+              No hay dispositivos de telemetría asignados a esta aula. Por favor, asigne un sensor desde el panel de administración para comenzar a recibir datos.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Dashboard data — only when sensors exist */}
+      {!error && hasSensors && <>
+
       {/* AC status + metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className={`rounded-xl p-5 flex items-center gap-4 ${isOn ? 'bg-blue-900/30 border border-blue-500/40' : 'bg-slate-800 border border-slate-700'}`}>
           {isOn ? <Zap size={32} className="text-blue-400" /> : <ZapOff size={32} className="text-slate-500" />}
           <div>
@@ -222,6 +247,16 @@ export default function RoomDetail() {
             {fmt(latest?.temperature, '°C')}
           </p>
           <p className="text-xs text-slate-500">Target ajustado: {fmt(latest?.cognitive_action?.target, '°C')}</p>
+        </div>
+        <div className={`border rounded-xl p-5 flex items-center gap-4 ${(latest?.co_ppm ?? 0) > 50 ? 'bg-red-900/30 border-red-500/40' : 'bg-slate-800 border-slate-700'}`}>
+          <CloudFog size={32} className={(latest?.co_ppm ?? 0) > 50 ? 'text-red-400' : 'text-amber-400'} />
+          <div>
+            <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Monóxido de CO</p>
+            <p className={`text-2xl font-bold ${(latest?.co_ppm ?? 0) > 50 ? 'text-red-400' : 'text-amber-300'}`}>
+              {fmt(latest?.co_ppm, ' ppm', 1)}
+            </p>
+            <p className="text-xs text-slate-500">Límite EPA: 50 ppm</p>
+          </div>
         </div>
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
           <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Modelo activo</p>
@@ -325,7 +360,7 @@ export default function RoomDetail() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-slate-400 text-xs uppercase border-b border-slate-700">
-                {['Sensor', 'Temp', 'Humedad', 'CO₂', 'AC', 'Timestamp'].map(h => (
+                {['Sensor', 'Temp', 'Humedad', 'CO₂', 'CO', 'AC', 'Timestamp'].map(h => (
                   <th key={h} className="text-left pb-2 pr-4">{h}</th>
                 ))}
               </tr>
@@ -339,6 +374,9 @@ export default function RoomDetail() {
                   </td>
                   <td className="py-2 pr-4 text-cyan-300">{fmt(r.humidity, '%')}</td>
                   <td className="py-2 pr-4 text-green-300">{fmt(r.co2_ppm, '', 0)}</td>
+                  <td className={`py-2 pr-4 font-semibold ${(r.co_ppm ?? 0) > 50 ? 'text-red-400' : 'text-amber-300'}`}>
+                    {fmt(r.co_ppm, ' ppm', 1)}
+                  </td>
                   <td className="py-2 pr-4">
                     <span className={`text-xs font-bold px-2 py-0.5 rounded ${r.cognitive_action?.ac_status === 'ON' ? 'bg-blue-900/50 text-blue-300' : 'bg-slate-700 text-slate-400'}`}>
                       {r.cognitive_action?.ac_status ?? '—'}
@@ -351,6 +389,8 @@ export default function RoomDetail() {
           </table>
         )}
       </div>
+
+      </>}
     </div>
   )
 }

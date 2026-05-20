@@ -24,6 +24,18 @@ const ROLE_COLORS: Record<string, string> = {
   guest:        'bg-slate-700 text-slate-300',
 }
 
+const ROLE_LABELS: Record<string, string> = {
+  admin:        'Administrador',
+  collaborator: 'Colaborador',
+  guest:        'Visitante',
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  pending:  'Pendiente',
+  active:   'Activo',
+  inactive: 'Inactivo',
+}
+
 export default function UserManagement() {
   const { user: currentUser } = useAuth()
   const [users, setUsers] = useState<UserRow[]>([])
@@ -154,8 +166,8 @@ export default function UserManagement() {
 
                     {/* Role */}
                     <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded font-medium capitalize ${ROLE_COLORS[u.role] ?? 'bg-slate-700 text-slate-300'}`}>
-                        {u.role}
+                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${ROLE_COLORS[u.role] ?? 'bg-slate-700 text-slate-300'}`}>
+                        {ROLE_LABELS[u.role] ?? u.role}
                       </span>
                     </td>
 
@@ -166,7 +178,7 @@ export default function UserManagement() {
                         u.status === 'pending' ? 'text-amber-400' : 'text-slate-500'
                       }`}>
                         {u.status === 'active' ? <CheckCircle size={12} /> : u.status === 'inactive' ? <XCircle size={12} /> : <RefreshCw size={12} />}
-                        {u.status}
+                        {STATUS_LABELS[u.status] ?? u.status}
                       </span>
                     </td>
 
@@ -200,7 +212,7 @@ export default function UserManagement() {
                                 onClick={() => setStatus(u.user_id, 'pending')}
                                 className="flex items-center gap-1 text-xs bg-amber-900/30 hover:bg-amber-900/50 text-amber-400 border border-amber-500/30 px-2.5 py-1 rounded-lg transition-colors"
                               >
-                                <RefreshCw size={12} /> Reingresar
+                                <RefreshCw size={12} /> Reevaluar
                               </button>
                             )}
                           </>

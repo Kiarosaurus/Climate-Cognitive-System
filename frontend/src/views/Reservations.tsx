@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   CalendarDays, RefreshCw, AlertCircle, Users,
-  Clock, CheckCircle2, PlusCircle, X,
+  Clock, CheckCircle2, PlusCircle, X, Pencil,
+  Calendar, DoorOpen,
 } from 'lucide-react'
 import api from '../api/client'
+import SearchableSelect from '../components/SearchableSelect'
 
 interface Room { id: number; name: string; max_capacity: number }
 
@@ -19,6 +21,17 @@ interface Reservation {
 }
 
 interface Toast { type: 'success' | 'error'; message: string }
+
+type Tab = 'new' | 'edit'
+
+interface EditPayload {
+  room_id: string
+  start_time: string
+  end_time: string
+  expected_occupancy: number
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatDt(iso: string) {
   return new Date(iso).toLocaleString('es', {
@@ -38,6 +51,34 @@ function nowPlus(minutes: number) {
   return d
 }
 
+function reservationLabel(r: Reservation, rooms: Room[]) {
+  const room = rooms.find(rm => String(rm.id) === String(r.room_id))
+  const name = r.room_name ?? room?.name ?? `Aula ${r.room_id}`
+  const cap = room?.max_capacity ?? 0
+  const d = new Date(r.start_time)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const h = d.getHours()
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  return `${name} (Capacidad: ${cap}) - ${date} ${pad(h % 12 || 12)}:${pad(d.getMinutes())} ${ampm}`
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function DataRow({ label, value, changed }: { label: string; value: string; changed?: boolean }) {
+  return (
+    <div>
+      <p className="text-xs text-slate-500 mb-0.5">{label}</p>
+      <p className={`text-sm font-medium ${changed ? 'text-amber-300' : 'text-slate-200'}`}>
+        {value}
+        {changed && <span className="ml-1.5 text-xs bg-amber-500/20 text-amber-400 px-1 py-0.5 rounded">modificado</span>}
+      </p>
+    </div>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export default function Reservations() {
   const [rooms, setRooms] = useState<Room[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
@@ -45,6 +86,13 @@ export default function Reservations() {
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<Toast | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [activeTab, setActiveTab] = useState<Tab>('new')
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [pendingEditData, setPendingEditData] = useState<{
+    payload: EditPayload
+    original: Reservation
+  } | null>(null)
 
   const [form, setForm] = useState({
     room_id: '',
@@ -60,7 +108,7 @@ export default function Reservations() {
 
   const fetchReservations = useCallback(() => {
     api.get<Reservation[]>('/admin/reservations')
-      .then(res => setReservations(res.data))
+      .then(res => setReservations(Array.isArray(res.data) ? res.data : []))
       .catch(err => setError(err?.response?.data?.detail ?? 'Error cargando reservas.'))
   }, [])
 
@@ -70,8 +118,8 @@ export default function Reservations() {
       api.get<Reservation[]>('/admin/reservations'),
     ])
       .then(([roomsRes, resRes]) => {
-        setRooms(roomsRes.data)
-        setReservations(resRes.data)
+        setRooms(Array.isArray(roomsRes.data) ? roomsRes.data : [])
+        setReservations(Array.isArray(resRes.data) ? resRes.data : [])
         if (roomsRes.data.length > 0) {
           setForm(f => ({ ...f, room_id: String(roomsRes.data[0].id) }))
         }
@@ -80,31 +128,89 @@ export default function Reservations() {
       .finally(() => setLoading(false))
   }, [])
 
+  // ── Derived state ─────────────────────────────────────────────────────────
+
+  const safeReservations = Array.isArray(reservations) ? reservations : []
+  const now = Date.now()
+  const upcoming = safeReservations.filter(r => r?.end_time && new Date(r.end_time).getTime() > now)
+  const past = safeReservations.filter(r => r?.end_time && new Date(r.end_time).getTime() <= now)
+
+  const reservationOptions = safeReservations.map(r => ({
+    value: String(r.id),
+    label: reservationLabel(r, rooms),
+  }))
+
+  const roomOptions = rooms.map(r => ({
+    value: String(r.id),
+    label: `${r.name} — capacidad ${r.max_capacity}`,
+  }))
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
+  function switchTab(tab: Tab) {
+    setActiveTab(tab)
+    if (tab === 'new') {
+      setSelectedId(null)
+      setForm({
+        room_id: rooms.length > 0 ? String(rooms[0].id) : '',
+        start_time: toLocalInputValue(nowPlus(5)),
+        end_time: toLocalInputValue(nowPlus(65)),
+        expected_occupancy: 1,
+      })
+    }
+  }
+
+  function handleReservationSelect(val: string) {
+    if (!val) {
+      setSelectedId(null)
+      return
+    }
+    const r = safeReservations.find(r => String(r.id) === val)
+    if (!r) return
+    setSelectedId(r.id)
+    setForm({
+      room_id: String(r.room_id),
+      start_time: toLocalInputValue(new Date(r.start_time)),
+      end_time: toLocalInputValue(new Date(r.end_time)),
+      expected_occupancy: r.expected_occupancy,
+    })
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.room_id) return
+    if (activeTab === 'edit' && !selectedId) return
 
-    // Convert datetime-local string → ISO for the backend
     const toISO = (local: string) => new Date(local).toISOString()
+    const payload: EditPayload = {
+      room_id: String(form.room_id),
+      start_time: toISO(form.start_time),
+      end_time: toISO(form.end_time),
+      expected_occupancy: Number(form.expected_occupancy),
+    }
 
+    if (activeTab === 'edit') {
+      const original = safeReservations.find(r => r.id === selectedId)
+      if (!original) return
+      setPendingEditData({ payload, original })
+      setIsModalOpen(true)
+      return
+    }
+
+    // POST — create new reservation
     setSubmitting(true)
     try {
-      await api.post('/admin/reservations', {
-        room_id: Number(form.room_id),
-        start_time: toISO(form.start_time),
-        end_time: toISO(form.end_time),
-        expected_occupancy: form.expected_occupancy,
-      })
+      await api.post('/admin/reservations', payload)
       showToast('success', 'Reserva creada correctamente.')
-      fetchReservations()
-      // Reset times
       setForm(f => ({
         ...f,
         start_time: toLocalInputValue(nowPlus(5)),
         end_time: toLocalInputValue(nowPlus(65)),
         expected_occupancy: 1,
       }))
+      fetchReservations()
     } catch (err: unknown) {
+      console.error('[Reservations] create error:', err)
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       showToast('error', detail ?? 'No se pudo crear la reserva.')
     } finally {
@@ -112,9 +218,35 @@ export default function Reservations() {
     }
   }
 
-  const now = Date.now()
-  const upcoming = reservations.filter(r => new Date(r.end_time).getTime() > now)
-  const past = reservations.filter(r => new Date(r.end_time).getTime() <= now)
+  async function confirmEdit() {
+    if (!pendingEditData || !selectedId) return
+    setSubmitting(true)
+    setIsModalOpen(false)
+    try {
+      await api.put(`/admin/reservations/${selectedId}`, pendingEditData.payload)
+      showToast('success', 'Reserva actualizada correctamente.')
+      fetchReservations()
+      setPendingEditData(null)
+    } catch (err: unknown) {
+      console.error('[Reservations] update error:', err)
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      showToast('error', detail ?? 'No se pudo actualizar la reserva.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // ── Shared style tokens ───────────────────────────────────────────────────
+
+  const inputCls = "w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 transition placeholder-slate-500"
+  const labelCls = "block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide"
+
+  const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
+    { key: 'new',  label: 'Nueva Reserva',  icon: <PlusCircle size={14} /> },
+    { key: 'edit', label: 'Editar Reserva', icon: <Pencil size={14} /> },
+  ]
+
+  // ── Section component ─────────────────────────────────────────────────────
 
   function Section({ title, items }: { title: string; items: Reservation[] }) {
     return (
@@ -168,8 +300,7 @@ export default function Reservations() {
     )
   }
 
-  const inputCls = "w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 transition placeholder-slate-500"
-  const labelCls = "block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide"
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6">
@@ -208,90 +339,219 @@ export default function Reservations() {
         </div>
       )}
 
-      {/* Create reservation form */}
+      {/* Form card */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
-        <h2 className="flex items-center gap-2 text-slate-200 text-sm font-semibold uppercase tracking-wide mb-5">
-          <PlusCircle size={16} className="text-blue-400" /> Nueva Reserva
-        </h2>
+
+        {/* Tabs */}
+        <div className="flex gap-1 bg-slate-900/50 border border-slate-700/60 rounded-xl p-1 w-fit mb-6">
+          {TABS.map(t => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => switchTab(t.key)}
+              className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === t.key
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-slate-400 hover:text-slate-100'
+              }`}
+            >
+              {t.icon} {t.label}
+            </button>
+          ))}
+        </div>
 
         {loading ? (
           <div className="flex items-center gap-2 text-slate-400 text-sm py-4">
-            <RefreshCw size={14} className="animate-spin" /> Cargando aulas…
+            <RefreshCw size={14} className="animate-spin" /> Cargando datos…
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Room */}
-            <div className="md:col-span-2">
-              <label className={labelCls}>Aula</label>
-              <select
-                required
-                value={form.room_id}
-                onChange={e => setForm(f => ({ ...f, room_id: e.target.value }))}
-                className={inputCls}
-              >
-                <option value="" disabled>Selecciona un aula…</option>
-                {rooms.map(r => (
-                  <option key={r.id} value={r.id}>
-                    {r.name} — capacidad {r.max_capacity}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
 
-            {/* Start */}
-            <div>
-              <label className={labelCls}>Inicio</label>
-              <input
-                type="datetime-local"
-                required
-                value={form.start_time}
-                onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))}
-                className={inputCls}
-              />
-            </div>
+            {/* Edit mode — reservation search */}
+            {activeTab === 'edit' && (
+              <div>
+                <SearchableSelect
+                  options={reservationOptions}
+                  value={String(selectedId ?? '')}
+                  onChange={handleReservationSelect}
+                  placeholder="Escribe aula o fecha para buscar…"
+                  label="Buscar reserva"
+                  icon={<Calendar size={16} />}
+                />
+                {selectedId ? (
+                  <p className="text-xs text-emerald-400 mt-1.5 flex items-center gap-1">
+                    <CheckCircle2 size={11} /> Reserva #{selectedId} cargada — modifica los campos y confirma.
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-500 mt-1.5">
+                    Selecciona una reserva existente para editar sus datos.
+                  </p>
+                )}
+              </div>
+            )}
 
-            {/* End */}
-            <div>
-              <label className={labelCls}>Fin</label>
-              <input
-                type="datetime-local"
-                required
-                value={form.end_time}
-                min={form.start_time}
-                onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))}
-                className={inputCls}
-              />
-            </div>
+            {/* Shared form fields */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <SearchableSelect
+                  options={roomOptions}
+                  value={form.room_id}
+                  onChange={v => setForm(f => ({ ...f, room_id: v }))}
+                  placeholder="Selecciona un aula…"
+                  label="Aula"
+                  icon={<DoorOpen size={16} />}
+                />
+              </div>
 
-            {/* Occupancy */}
-            <div>
-              <label className={labelCls}>Ocupantes esperados</label>
-              <input
-                type="number"
-                required
-                min={1}
-                max={rooms.find(r => String(r.id) === form.room_id)?.max_capacity ?? 999}
-                value={form.expected_occupancy}
-                onChange={e => setForm(f => ({ ...f, expected_occupancy: Number(e.target.value) }))}
-                className={inputCls}
-              />
+              <div>
+                <label className={labelCls}>Inicio</label>
+                <input
+                  type="datetime-local"
+                  required
+                  value={form.start_time}
+                  onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))}
+                  className={inputCls}
+                />
+              </div>
+
+              <div>
+                <label className={labelCls}>Fin</label>
+                <input
+                  type="datetime-local"
+                  required
+                  value={form.end_time}
+                  min={form.start_time}
+                  onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))}
+                  className={inputCls}
+                />
+              </div>
+
+              <div>
+                <label className={labelCls}>Ocupantes esperados</label>
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  max={(Array.isArray(rooms) ? rooms : []).find(r => String(r.id) === String(form.room_id))?.max_capacity ?? 999}
+                  value={form.expected_occupancy}
+                  onChange={e => setForm(f => ({ ...f, expected_occupancy: Number(e.target.value) }))}
+                  className={inputCls}
+                />
+              </div>
             </div>
 
             {/* Submit */}
-            <div className="md:col-span-2 flex justify-end pt-1">
+            <div className="flex justify-end pt-1">
               <button
                 type="submit"
-                disabled={submitting || !form.room_id}
+                disabled={submitting || !form.room_id || (activeTab === 'edit' && !selectedId)}
                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-semibold text-sm px-6 py-2.5 rounded-lg transition-colors"
               >
-                {submitting
-                  ? <><RefreshCw size={14} className="animate-spin" /> Guardando…</>
-                  : <><PlusCircle size={14} /> Crear reserva</>}
+                {submitting ? (
+                  <><RefreshCw size={14} className="animate-spin" /> {activeTab === 'new' ? 'Guardando…' : 'Actualizando…'}</>
+                ) : activeTab === 'new' ? (
+                  <><PlusCircle size={14} /> Crear reserva</>
+                ) : (
+                  <><Pencil size={14} /> Revisar y actualizar</>
+                )}
               </button>
             </div>
           </form>
         )}
       </div>
+
+      {/* ── Confirmation modal ────────────────────────────────────────────── */}
+      {isModalOpen && pendingEditData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl">
+
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Pencil size={16} className="text-blue-400" />
+                Confirmar Actualización de Reserva
+              </h3>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="text-slate-400 hover:text-slate-100 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Before / After columns */}
+            <div className="p-6 grid grid-cols-2 gap-4">
+
+              {/* Left — Datos Actuales */}
+              <div className="bg-slate-700/40 border border-slate-600/50 rounded-xl p-4 space-y-4">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-slate-500 inline-block" />
+                  Datos Actuales
+                </p>
+                <DataRow
+                  label="Aula"
+                  value={pendingEditData.original.room_name ?? `Aula ${pendingEditData.original.room_id}`}
+                />
+                <DataRow label="Inicio" value={formatDt(pendingEditData.original.start_time)} />
+                <DataRow label="Fin" value={formatDt(pendingEditData.original.end_time)} />
+                <DataRow label="Ocupantes" value={String(pendingEditData.original.expected_occupancy)} />
+              </div>
+
+              {/* Right — Nuevos Datos */}
+              <div className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-4 space-y-4">
+                <p className="text-xs font-semibold text-blue-400 uppercase tracking-wide flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" />
+                  Nuevos Datos
+                </p>
+                <DataRow
+                  label="Aula"
+                  value={
+                    rooms.find(r => String(r.id) === String(pendingEditData.payload.room_id))?.name
+                    ?? `Aula ${pendingEditData.payload.room_id}`
+                  }
+                  changed={String(pendingEditData.payload.room_id) !== String(pendingEditData.original.room_id)}
+                />
+                <DataRow
+                  label="Inicio"
+                  value={formatDt(pendingEditData.payload.start_time)}
+                  changed={pendingEditData.payload.start_time !== new Date(pendingEditData.original.start_time).toISOString()}
+                />
+                <DataRow
+                  label="Fin"
+                  value={formatDt(pendingEditData.payload.end_time)}
+                  changed={pendingEditData.payload.end_time !== new Date(pendingEditData.original.end_time).toISOString()}
+                />
+                <DataRow
+                  label="Ocupantes"
+                  value={String(pendingEditData.payload.expected_occupancy)}
+                  changed={pendingEditData.payload.expected_occupancy !== pendingEditData.original.expected_occupancy}
+                />
+              </div>
+            </div>
+
+            {/* Modal footer */}
+            <div className="flex items-center justify-end gap-3 px-6 pb-5">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-300 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmEdit}
+                disabled={submitting}
+                className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed rounded-lg transition-colors"
+              >
+                {submitting
+                  ? <><RefreshCw size={13} className="animate-spin" /> Actualizando…</>
+                  : <><CheckCircle2 size={14} /> Sí, Actualizar</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Reservation lists */}
       {!loading && (

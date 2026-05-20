@@ -147,7 +147,7 @@ export default function SensorSearch() {
                     {label}<SortIndicator col={key} />
                   </th>
                 ))}
-                <th className="px-4 py-3 text-right">Live</th>
+                <th className="px-4 py-3 text-right">En vivo</th>
               </tr>
             </thead>
             <tbody>

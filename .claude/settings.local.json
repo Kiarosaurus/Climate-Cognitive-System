@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Read(///wsl.localhost/Ubuntu/home/kiara/CC/**)",
-      "Read(///wsl.localhost/Ubuntu/home/kiara/CC/Climate-Cognitive-System/**)",
-      "Read(///wsl.localhost/Ubuntu/home/kiara/CC/Climate-Cognitive-System/backend/app/**)"
-    ]
-  }
-}

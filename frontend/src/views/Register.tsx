@@ -5,6 +5,12 @@ import axios from 'axios'
 
 const ROLES = ['guest', 'collaborator', 'admin'] as const
 
+const ROLE_LABELS: Record<typeof ROLES[number], string> = {
+  guest:        'Visitante',
+  collaborator: 'Colaborador',
+  admin:        'Administrador',
+}
+
 export default function Register() {
   const navigate = useNavigate()
   const [form, setForm] = useState({ username: '', password: '', role: 'guest' as typeof ROLES[number] })
@@ -109,7 +115,7 @@ export default function Register() {
                 onChange={e => setForm(f => ({ ...f, role: e.target.value as typeof ROLES[number] }))}
                 className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition"
               >
-                {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
               </select>
               {form.role !== 'guest' && (
                 <p className="text-xs text-amber-400 mt-1.5">

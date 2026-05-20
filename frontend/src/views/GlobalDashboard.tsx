@@ -1,17 +1,17 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 import {
   Thermometer, Droplets, Wind, AlertTriangle,
-  CheckCircle, RefreshCw, Send, Zap, ZapOff, Clock, FlaskConical,
+  CheckCircle, RefreshCw, Send, Zap, ZapOff, Clock, FlaskConical, CloudFog,
 } from 'lucide-react'
 import axios from 'axios'
 import api from '../api/client'
 import type { CombinedReading, ReadingInput } from '../types'
 
-const SENSOR_IDS = ['sensor-001', 'sensor-002', 'sensor-003']
+const SENSOR_IDS = ['SIM-sensor-001', 'SIM-sensor-002', 'SIM-sensor-003']
 const MAX_POINTS = 40
 
 function fmt(n: number | null | undefined, unit = '', dec = 1) {
@@ -78,10 +78,8 @@ export default function GlobalDashboard() {
   const [apiOnline, setApiOnline] = useState<boolean | null>(null)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [form, setForm] = useState<ReadingInput>({ sensor_id: SENSOR_IDS[0], temperature: 24.5, humidity: 55, co2_ppm: 800 })
+  const [form, setForm] = useState<ReadingInput>({ sensor_id: SENSOR_IDS[0], temperature: 24.5, humidity: 55, co2_ppm: 800, co_ppm: 0 })
   const [autoMode, setAutoMode] = useState(false)
-  const autoRef = useRef(autoMode)
-  autoRef.current = autoMode
 
   const checkHealth = useCallback(async () => {
     try { await axios.get('/health'); setApiOnline(true) }
@@ -97,7 +95,7 @@ export default function GlobalDashboard() {
   const sendReading = useCallback(async (input: ReadingInput) => {
     setSending(true); setError(null)
     try {
-      const { data } = await api.post('/sensors/', { ...input, timestamp: new Date().toISOString() })
+      const { data } = await api.post('/sensors/', { ...input, is_simulated: true, timestamp: new Date().toISOString() })
       setReadings(prev => [...prev.slice(-(MAX_POINTS - 1)), { input, output: data, sentAt: Date.now() }])
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } }; message?: string })?.response?.data?.detail
@@ -107,17 +105,22 @@ export default function GlobalDashboard() {
   }, [])
 
   useEffect(() => {
-    if (!autoMode) return
-    const t = setInterval(() => {
-      if (!autoRef.current) return
+    if (!autoMode) return   // guard: toggle is off — do not start any interval
+
+    const interval = setInterval(() => {
+      if (!autoMode) return  // inner guard: stale-closure safety — skip if somehow off
       sendReading({
         sensor_id: SENSOR_IDS[Math.floor(Math.random() * SENSOR_IDS.length)],
         temperature: parseFloat((15 + Math.random() * 30).toFixed(1)),
         humidity: parseFloat((30 + Math.random() * 65).toFixed(1)),
         co2_ppm: parseFloat((350 + Math.random() * 1500).toFixed(0)),
+        co_ppm: parseFloat(
+          (Math.random() < 0.1 ? 55 + Math.random() * 95 : Math.random() * 10).toFixed(1)
+        ),
       })
     }, 4_000)
-    return () => clearInterval(t)
+
+    return () => clearInterval(interval)  // fires on toggle-off AND on unmount
   }, [autoMode, sendReading])
 
   const latest = readings[readings.length - 1] ?? null
@@ -140,8 +143,8 @@ export default function GlobalDashboard() {
           {apiOnline === null
             ? <span className="flex items-center gap-1 text-slate-400"><RefreshCw size={13} className="animate-spin" /> Verificando…</span>
             : apiOnline
-              ? <span className="flex items-center gap-1 text-emerald-400">● API Online</span>
-              : <span className="flex items-center gap-1 text-red-400">● API Offline</span>}
+              ? <span className="flex items-center gap-1 text-emerald-400">● API en línea</span>
+              : <span className="flex items-center gap-1 text-red-400">● API sin conexión</span>}
           {latest && <span className="flex items-center gap-1 text-xs text-slate-500"><Clock size={12} />{timeLabel(latest.sentAt)}</span>}
         </div>
       </div>
@@ -150,15 +153,19 @@ export default function GlobalDashboard() {
         <div className="bg-red-900/40 border border-red-500/50 rounded-xl px-4 py-3 flex items-center gap-3">
           <AlertTriangle size={20} className="text-red-400 shrink-0" />
           <span className="font-semibold text-red-300">Anomalía — </span>
-          <span className="text-slate-300 text-sm">{latest.output.sensor_id} · {fmt(latest.input.temperature, '°C')} · {fmt(latest.input.humidity, '% HR')}</span>
+          <span className="text-slate-300 text-sm">
+            {latest.output.sensor_id} · {fmt(latest.input.temperature, '°C')} · {fmt(latest.input.humidity, '% HR')}
+            {latest.input.co_ppm > 50 && ` · CO: ${fmt(latest.input.co_ppm, ' ppm', 1)} ⚠`}
+          </span>
         </div>
       )}
       {error && <div className="bg-orange-900/40 border border-orange-500/50 rounded-xl px-4 py-3 text-sm text-orange-300">⚠ {error}</div>}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <MetricCard icon={<Thermometer size={24} />} label="Temperatura" value={fmt(latest?.input.temperature, '°C')} sub={latest?.output.sensor_id} color={(latest?.input.temperature ?? 0) > 40 ? 'text-red-400' : 'text-blue-300'} />
         <MetricCard icon={<Droplets size={24} />} label="Humedad" value={fmt(latest?.input.humidity, '%')} color={(latest?.input.humidity ?? 0) > 95 ? 'text-red-400' : 'text-cyan-300'} />
         <MetricCard icon={<Wind size={24} />} label="CO₂" value={fmt(latest?.input.co2_ppm, ' ppm', 0)} color={(latest?.input.co2_ppm ?? 0) > 1500 ? 'text-orange-400' : 'text-green-300'} />
+        <MetricCard icon={<CloudFog size={24} />} label="CO" value={fmt(latest?.input.co_ppm, ' ppm', 1)} sub="Límite EPA: 50 ppm" color={(latest?.input.co_ppm ?? 0) > 50 ? 'text-red-400' : 'text-amber-300'} />
         <MetricCard icon={anomalyCount > 0 ? <AlertTriangle size={24} /> : <CheckCircle size={24} />} label="Anomalías" value={String(anomalyCount)} sub={`de ${readings.length} lecturas`} color={anomalyCount > 0 ? 'text-red-400' : 'text-emerald-400'} />
       </div>
 
@@ -195,7 +202,7 @@ export default function GlobalDashboard() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-slate-400 text-xs uppercase border-b border-slate-700">
-                  {['Sensor', 'Temp', 'Humedad', 'CO₂', 'AC', 'Anomalía', 'Hora'].map(h => (
+                  {['Sensor', 'Temp', 'Humedad', 'CO₂', 'CO', 'AC', 'Anomalía', 'Hora'].map(h => (
                     <th key={h} className="text-left pb-2 pr-4 last:text-right">{h}</th>
                   ))}
                 </tr>
@@ -207,6 +214,9 @@ export default function GlobalDashboard() {
                     <td className={`py-2 pr-4 font-semibold ${r.input.temperature > 40 ? 'text-red-400' : 'text-blue-300'}`}>{fmt(r.input.temperature, '°C')}</td>
                     <td className="py-2 pr-4 text-cyan-300">{fmt(r.input.humidity, '%')}</td>
                     <td className="py-2 pr-4 text-green-300">{fmt(r.input.co2_ppm, '', 0)}</td>
+                    <td className={`py-2 pr-4 font-semibold ${r.input.co_ppm > 50 ? 'text-red-400' : 'text-amber-300'}`}>
+                      {fmt(r.input.co_ppm, ' ppm', 1)}
+                    </td>
                     <td className="py-2 pr-4">
                       <span className={`text-xs font-bold px-2 py-0.5 rounded ${r.output.cognitive_action?.ac_status === 'ON' ? 'bg-blue-900/50 text-blue-300' : 'bg-slate-700 text-slate-400'}`}>
                         {r.output.cognitive_action?.ac_status ?? '—'}
@@ -255,7 +265,7 @@ export default function GlobalDashboard() {
             </label>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
             <div>
               <label className="block text-xs text-slate-400 mb-1">Sensor ID</label>
               <select
@@ -266,10 +276,13 @@ export default function GlobalDashboard() {
                 {SENSOR_IDS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
-            {(['temperature', 'humidity', 'co2_ppm'] as const).map(field => (
+            {(['temperature', 'humidity', 'co2_ppm', 'co_ppm'] as const).map(field => (
               <div key={field}>
                 <label className="block text-xs text-slate-400 mb-1">
-                  {field === 'temperature' ? 'Temperatura (°C)' : field === 'humidity' ? 'Humedad (%)' : 'CO₂ (ppm)'}
+                  {field === 'temperature' ? 'Temperatura (°C)'
+                    : field === 'humidity' ? 'Humedad (%)'
+                    : field === 'co2_ppm' ? 'CO₂ (ppm)'
+                    : 'CO (ppm)'}
                 </label>
                 <input
                   type="number"

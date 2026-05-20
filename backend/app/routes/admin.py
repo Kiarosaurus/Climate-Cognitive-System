@@ -51,6 +51,16 @@ class SensorCreateIn(BaseModel):
     room_id: str
 
 
+class RoomUpdateIn(BaseModel):
+    name: str
+    max_capacity: int
+    target_temp: float
+
+
+class SensorAssignIn(BaseModel):
+    room_id: str
+
+
 class StatusPatch(BaseModel):
     status: str
 
@@ -131,6 +141,68 @@ def create_room(
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
     logger.info("Admin '%s' created room '%s' (%s).", current_user.username, room.id, room.name)
     return {"id": room.id, "name": room.name, "max_capacity": room.max_capacity, "target_temp": room.target_temp}
+
+
+@router.put("/rooms/{room_id}")
+def update_room(
+    room_id: str,
+    payload: RoomUpdateIn,
+    db: Session = Depends(get_db_sql),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail=f"Room id='{room_id}' not found.")
+    # Check name uniqueness only if name actually changed
+    if payload.name != room.name:
+        if db.query(Room).filter(Room.name == payload.name).first():
+            raise HTTPException(status_code=409, detail=f"Room name='{payload.name}' already exists.")
+    room.name = payload.name
+    room.max_capacity = payload.max_capacity
+    room.target_temp = payload.target_temp
+    try:
+        db.commit()
+        db.refresh(room)
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.error("DB error updating room: %s", exc)
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+    logger.info("Admin '%s' updated room '%s'.", current_user.username, room.id)
+    return {"id": room.id, "name": room.name, "max_capacity": room.max_capacity, "target_temp": room.target_temp}
+
+
+@router.put("/sensors/{sensor_id}")
+def reassign_sensor(
+    sensor_id: str,
+    payload: SensorAssignIn,
+    db: Session = Depends(get_db_sql),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    device = db.query(SensorDevice).filter(SensorDevice.id == sensor_id).first()
+    if not device:
+        raise HTTPException(status_code=404, detail=f"Sensor id='{sensor_id}' not found.")
+    if not db.query(Room).filter(Room.id == payload.room_id).first():
+        raise HTTPException(status_code=404, detail=f"Room id='{payload.room_id}' not found.")
+    device.room_id = payload.room_id
+    try:
+        db.commit()
+        db.refresh(device)
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.error("DB error reassigning sensor: %s", exc)
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+    logger.info(
+        "Admin '%s' reassigned sensor '%s' → room '%s'.",
+        current_user.username, device.id, device.room_id,
+    )
+    return {
+        "sensor_id": device.id,
+        "room_id": device.room_id,
+        "is_active": device.is_active,
+        "control_enabled": device.control_enabled,
+    }
 
 
 @router.post("/setup-rooms", status_code=201)
@@ -371,7 +443,56 @@ def create_reservation(
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
 
     logger.info(
-        "Reservation id=%d created by '%s' for room_id=%d.",
+        "Reservation id=%d created by '%s' for room_id=%s.",
+        reservation.id, current_user.username, reservation.room_id,
+    )
+    return {
+        "id": reservation.id,
+        "room_id": reservation.room_id,
+        "user_id": reservation.user_id,
+        "start_time": reservation.start_time.isoformat(),
+        "end_time": reservation.end_time.isoformat(),
+        "expected_occupancy": reservation.expected_occupancy,
+    }
+
+
+@router.put("/reservations/{reservation_id}")
+def update_reservation(
+    reservation_id: int,
+    payload: ReservationIn,
+    db: Session = Depends(get_db_sql),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin_or_collaborator(current_user)
+
+    reservation = db.query(Reservation).filter(Reservation.id == reservation_id).first()
+    if not reservation:
+        raise HTTPException(status_code=404, detail=f"Reservation id={reservation_id} not found.")
+
+    if not db.query(Room).filter(Room.id == payload.room_id).first():
+        raise HTTPException(status_code=404, detail=f"Room id={payload.room_id} not found.")
+
+    start = payload.start_time.replace(tzinfo=None) if payload.start_time.tzinfo else payload.start_time
+    end = payload.end_time.replace(tzinfo=None) if payload.end_time.tzinfo else payload.end_time
+
+    if end <= start:
+        raise HTTPException(status_code=400, detail="end_time must be after start_time.")
+
+    reservation.room_id = payload.room_id
+    reservation.start_time = start
+    reservation.end_time = end
+    reservation.expected_occupancy = payload.expected_occupancy
+
+    try:
+        db.commit()
+        db.refresh(reservation)
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.error("DB error updating reservation: %s", exc)
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+
+    logger.info(
+        "Reservation id=%d updated by '%s' for room_id=%s.",
         reservation.id, current_user.username, reservation.room_id,
     )
     return {

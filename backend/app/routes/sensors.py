@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pymongo.errors import PyMongoError
@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
 from app.models.sensor import SensorReading
-from app.models.admin import SensorDevice, Reservation, User
+from app.models.admin import SensorDevice, Reservation, User, Room
 from app.services.data_service import process_reading
 from app.database import get_db
 from app.database_sql import get_db_sql
@@ -59,6 +59,114 @@ async def list_readings(
     for d in docs:
         d.pop("_id", None)
     return docs
+
+
+# ── Emergency monitor ────────────────────────────────────────────────────────
+
+_SIM_KEYWORDS = ("SIM", "TEST")
+
+
+def _looks_synthetic(sensor_id: str, room_id: str | None) -> bool:
+    """True when the sensor or room ID contains a known simulation keyword."""
+    haystack = ((sensor_id or "") + (room_id or "")).upper()
+    return any(kw in haystack for kw in _SIM_KEYWORDS)
+
+
+@router.get("/emergencies")
+async def get_co_emergencies(
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    db_sql: Session = Depends(get_db_sql),
+    current_user: User = Depends(get_current_user),
+):
+    """Return CO > 50 ppm alerts from the last 5 seconds, split into real vs simulated.
+
+    Hard-fallback rules (any one forces simulated):
+      1. is_simulated flag is True in the stored reading
+      2. sensor_id or resolved room_id contains 'SIM' or 'TEST'
+      3. Sensor not registered in SQL (room_id cannot be resolved)
+      4. room_id does not exist in the rooms table
+
+    Only real if is_simulated is strictly False AND the room resolves to a known SQL room.
+    """
+    if current_user.role not in ("admin", "collaborator"):
+        raise HTTPException(status_code=403, detail="Admin or collaborator role required.")
+
+    now = datetime.now(timezone.utc)
+
+    # Purge simulated readings older than 5 seconds — if the simulator stops sending,
+    # the DB is clean within one polling cycle and the frontend receives nothing.
+    ten_sec_ago = (now - timedelta(seconds=10)).strftime("%Y-%m-%dT%H:%M:%S.%f")
+    purge = await db["sensor_readings"].delete_many(
+        {"is_simulated": True, "timestamp": {"$lt": ten_sec_ago}}
+    )
+    if purge.deleted_count:
+        print(f"Purging old simulation data...")
+
+    cursor = db["sensor_readings"].find(
+        {"co_ppm": {"$gt": 50}, "timestamp": {"$gte": ten_sec_ago}}
+    ).sort("co_ppm", -1)
+
+    docs = await cursor.to_list(length=200)
+
+    if not docs:
+        return {"real": [], "simulated": []}
+
+    # Deduplicate — one entry per sensor_id, highest co_ppm wins (already sorted desc)
+    seen: dict[str, dict] = {}
+    for doc in docs:
+        sid = doc["sensor_id"]
+        if sid not in seen:
+            seen[sid] = doc
+
+    # Enrich with room names from SQL
+    sensor_ids = list(seen.keys())
+    devices = await run_in_threadpool(
+        lambda: db_sql.query(SensorDevice).filter(SensorDevice.id.in_(sensor_ids)).all()
+    )
+    device_to_room: dict[str, str] = {d.id: d.room_id for d in devices}
+
+    room_ids = list({d.room_id for d in devices})
+    rooms = await run_in_threadpool(
+        lambda: db_sql.query(Room).filter(Room.id.in_(room_ids)).all()
+    )
+    room_name_map: dict[str, str] = {r.id: r.name for r in rooms}
+
+    real: list[dict] = []
+    simulated: list[dict] = []
+
+    for sid, doc in seen.items():
+        rid = device_to_room.get(sid)                 # None → sensor not in SQL
+        resolved_name = room_name_map.get(rid) if rid else None  # None → room not in SQL
+
+        is_sim_flag   = bool(doc.get("is_simulated", False))
+        id_synthetic  = _looks_synthetic(sid, rid)
+        room_unknown  = resolved_name is None         # any gap in SQL chain → synthetic
+
+        entry = {
+            "room_id":    rid or sid,
+            "room_name":  resolved_name or "Simulación",
+            "sensor_id":  sid,
+            "co_ppm":     doc.get("co_ppm", 0),
+            "timestamp":  doc.get("timestamp"),
+        }
+
+        if is_sim_flag or id_synthetic or room_unknown:
+            simulated.append({**entry, "is_simulated": True})
+        else:
+            real.append({**entry, "is_simulated": False})
+
+    if real:
+        logger.warning(
+            "CO REAL EMERGENCY — '%s' polling: %d sensor(s) — rooms: %s",
+            current_user.username, len(real), [r["room_name"] for r in real],
+        )
+    if simulated:
+        logger.info(
+            "CO simulated alert — '%s' polling: %d sensor(s) (hard-fallback applied)",
+            current_user.username, len(simulated),
+        )
+
+    return {"real": real, "simulated": simulated}
 
 
 # ── Sensor control ────────────────────────────────────────────────────────────

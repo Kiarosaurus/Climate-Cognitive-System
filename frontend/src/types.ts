@@ -28,6 +28,8 @@ export interface ReadingInput {
   temperature: number
   humidity: number
   co2_ppm: number
+  co_ppm: number
+  is_simulated?: boolean
 }
 
 export interface CombinedReading {
