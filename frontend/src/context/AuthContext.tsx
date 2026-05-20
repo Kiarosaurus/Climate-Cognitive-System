@@ -4,7 +4,7 @@ import {
 } from 'react'
 import axios from 'axios'
 import { jwtDecode } from 'jwt-decode'
-import api from '../api/client'
+import api, { authHandlers } from '../api/client'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -23,6 +23,8 @@ interface AuthContextType {
   user: User | null
   token: string | null
   isInitializing: boolean
+  isSessionExpired: boolean
+  clearSessionExpired: () => void
   login: (username: string, password: string) => Promise<void>
   logout: () => void
 }
@@ -53,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [isInitializing, setIsInitializing] = useState(true)
+  const [isSessionExpired, setIsSessionExpired] = useState(false)
 
   // ── Bootstrap: hydrate auth state from storage before first route render ──
 
@@ -73,14 +76,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ── Axios interceptors ────────────────────────────────────────────────────
 
   useEffect(() => {
-    // Inject Bearer token on every outgoing request
     const reqId = api.interceptors.request.use(config => {
       const t = sessionStorage.getItem('token')
       if (t) config.headers.Authorization = `Bearer ${t}`
       return config
     })
-    // 401 handling (redirect + token clear) lives in api/client.ts
     return () => { api.interceptors.request.eject(reqId) }
+  }, [])
+
+  // Register the session-expired callback so client.ts interceptor can signal
+  // auth failure without touching React state directly.
+  useEffect(() => {
+    authHandlers.onSessionExpired = () => {
+      sessionStorage.clear()
+      setToken(null)
+      setUser(null)
+      setIsSessionExpired(true)
+    }
+    return () => { authHandlers.onSessionExpired = null }
   }, [])
 
   // ── Actions ───────────────────────────────────────────────────────────────
@@ -105,6 +118,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }, [])
 
+  const clearSessionExpired = useCallback(() => {
+    setIsSessionExpired(false)
+  }, [])
+
   if (isInitializing) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950">
@@ -120,7 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, isInitializing, login, logout }}>
+    <AuthContext.Provider value={{ user, token, isInitializing, isSessionExpired, clearSessionExpired, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

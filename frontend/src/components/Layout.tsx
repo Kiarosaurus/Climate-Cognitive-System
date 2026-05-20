@@ -1,8 +1,8 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Building2, Cpu, CalendarDays,
-  Users, LogOut, Thermometer, ChevronRight, HardDrive, TrendingUp,
-  AlertTriangle, X,
+  Users, LogOut, Thermometer, ChevronRight, Building, TrendingUp,
+  AlertTriangle, X, ShieldAlert,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useEmergency } from '../context/EmergencyContext'
@@ -21,12 +21,12 @@ const NAV: NavItem[] = [
   { to: '/sensors',      label: 'Sensores',      icon: <Cpu size={18} />,          roles: ['admin'] },
   { to: '/reservations', label: 'Reservas',      icon: <CalendarDays size={18} />, roles: ['admin', 'collaborator'] },
   { to: '/admin/users',  label: 'Usuarios',      icon: <Users size={18} />,        roles: ['admin'] },
-  { to: '/devices',      label: 'Dispositivos',  icon: <HardDrive size={18} />,    roles: ['admin'] },
+  { to: '/infrastructure', label: 'Infraestructura', icon: <Building size={18} />,   roles: ['admin'] },
   { to: '/roi',          label: 'Rentabilidad',  icon: <TrendingUp size={18} />,   roles: ['admin'] },
 ]
 
 export default function Layout() {
-  const { user, logout } = useAuth()
+  const { user, logout, isSessionExpired, clearSessionExpired } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const { realEmergencies, simulatedEmergencies, isPopupDismissed, dismissPopup, reopenPopup } = useEmergency()
@@ -94,8 +94,39 @@ export default function Layout() {
 
   const modalFooterColor = showReal ? 'text-red-200 border-red-800' : 'text-amber-200 border-amber-800'
 
+  function handleGoToLogin() {
+    clearSessionExpired()
+    navigate('/login', { replace: true })
+  }
+
   return (
     <div className="flex h-screen bg-slate-900 text-slate-100 overflow-hidden">
+
+      {/* ── Session expired modal — highest priority, blocks all interaction ── */}
+      {isSessionExpired && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-slate-800 border border-slate-600 rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex flex-col items-center px-8 py-8 gap-5 text-center">
+              <div className="flex items-center justify-center w-16 h-16 rounded-full bg-yellow-500/15 border border-yellow-500/30">
+                <ShieldAlert size={32} className="text-yellow-400" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-lg font-bold text-slate-100">Sesión caducada</h2>
+                <p className="text-sm text-slate-400 leading-relaxed">
+                  Tu sesión ha caducado o el servidor ha sido reiniciado.
+                  Por seguridad, debes volver a autenticarte.
+                </p>
+              </div>
+              <button
+                onClick={handleGoToLogin}
+                className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm px-6 py-3 rounded-xl transition-colors"
+              >
+                Ir al Login
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Overlay tint — only when an emergency is visible ── */}
       {isAnyVisible && (

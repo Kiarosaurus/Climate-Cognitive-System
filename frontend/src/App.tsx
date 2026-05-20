@@ -10,21 +10,24 @@ import RoomDetail from './views/RoomDetail'
 import SensorSearch from './views/SensorSearch'
 import Reservations from './views/Reservations'
 import UserManagement from './views/UserManagement'
-import Devices from './views/Devices'
+import Infrastructure from './views/Infrastructure'
 import ROIReport from './views/ROIReport'
 import Register from './views/Register'
 
-/** Redirects unauthenticated users to /login. Wraps all dashboard routes. */
+/** Redirects unauthenticated users to /login. When session expires, renders
+ *  children so Layout's session-expired modal can display instead of hard redirect. */
 function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { token, isInitializing } = useAuth()
+  const { token, isInitializing, isSessionExpired } = useAuth()
   if (isInitializing) return null
-  return token ? <>{children}</> : <Navigate to="/login" replace />
+  if (!token && !isSessionExpired) return <Navigate to="/login" replace />
+  return <>{children}</>
 }
 
 /** RBAC gate: allows only users with role='admin'. Others land on the dashboard. */
 function AdminRoute({ children }: { children: ReactNode }) {
-  const { user, token, isInitializing } = useAuth()
+  const { user, token, isInitializing, isSessionExpired } = useAuth()
   if (isInitializing) return null
+  if (isSessionExpired) return null  // Layout's modal covers the screen
   if (!token) return <Navigate to="/login" replace />
   if (user?.role !== 'admin') return <Navigate to="/" replace />
   return <>{children}</>
@@ -32,8 +35,9 @@ function AdminRoute({ children }: { children: ReactNode }) {
 
 /** RBAC gate: allows admin + collaborator. Guests are redirected to the dashboard. */
 function CollaboratorRoute({ children }: { children: ReactNode }) {
-  const { user, token, isInitializing } = useAuth()
+  const { user, token, isInitializing, isSessionExpired } = useAuth()
   if (isInitializing) return null
+  if (isSessionExpired) return null  // Layout's modal covers the screen
   if (!token) return <Navigate to="/login" replace />
   if (user?.role === 'guest') return <Navigate to="/" replace />
   return <>{children}</>
@@ -84,10 +88,10 @@ export default function App() {
             }
           />
           <Route
-            path="devices"
+            path="infrastructure"
             element={
               <AdminRoute>
-                <Devices />
+                <Infrastructure />
               </AdminRoute>
             }
           />

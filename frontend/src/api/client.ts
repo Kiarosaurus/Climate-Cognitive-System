@@ -10,16 +10,23 @@ const api = axios.create({
   },
 })
 
+// AuthProvider registers this callback so the interceptor can signal expiry
+// without coupling the axios module to React state directly.
+export const authHandlers = { onSessionExpired: null as (() => void) | null }
+
 api.interceptors.response.use(
   res => res,
   err => {
     const url: string = err.config?.url ?? ''
-    // Guard: skip if the failing request was already the login endpoint
-    // to avoid redirect loops when credentials are wrong.
-    if (err.response?.status === 401 && !url.includes('/auth/login')) {
-      sessionStorage.removeItem('token')
-      // replace() avoids adding the expired-session page to browser history
-      window.location.replace('/login')
+    const status: number = err.response?.status
+    const isAuthError = (status === 401 || status === 403) && !url.includes('/auth/login')
+    if (isAuthError) {
+      if (authHandlers.onSessionExpired) {
+        authHandlers.onSessionExpired()
+      } else {
+        sessionStorage.removeItem('token')
+        window.location.replace('/login')
+      }
     }
     return Promise.reject(err)
   },
