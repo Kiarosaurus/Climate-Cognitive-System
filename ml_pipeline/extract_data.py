@@ -65,11 +65,21 @@ def _clean(df: pd.DataFrame) -> pd.DataFrame:
 def _add_synthetic_people(df: pd.DataFrame) -> pd.DataFrame:
     rng = np.random.default_rng(0)
     is_class = (df["day_of_week"] < 5) & (df["hour_of_day"].between(8, 17))
-    df["expected_people"] = np.where(
+    
+    # Generamos la predicción sintética
+    synthetic_people = np.where(
         is_class,
         rng.integers(10, 35, len(df)),
         rng.integers(0, 5, len(df)),
     )
+    
+    # CAMBIO: Solo aplicar los datos sintéticos donde expected_people sea nulo o no exista
+    if "expected_people" not in df.columns:
+        df["expected_people"] = synthetic_people
+    else:
+        # Rellenar solo los vacíos (NaN) con la lógica sintética
+        df["expected_people"] = df["expected_people"].fillna(pd.Series(synthetic_people))
+        
     return df
 
 
