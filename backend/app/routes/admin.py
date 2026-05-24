@@ -1,15 +1,20 @@
 import logging
-from datetime import datetime, time as dt_time, timezone
+import math
+from datetime import datetime, time as dt_time, timezone, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.concurrency import run_in_threadpool
 
+from app.database import get_db
 from app.database_sql import get_db_sql
 from app.models.admin import Room, Schedule, SensorDevice, Reservation, User, STATUSES
 from app.dependencies import get_current_user
+from app.services.predictive_service import calculate_cooling_demand
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -686,4 +691,256 @@ def update_reservation(
         "start_time": reservation.start_time.isoformat(),
         "end_time": reservation.end_time.isoformat(),
         "expected_occupancy": reservation.expected_occupancy,
+    }
+
+
+# ── Room 24h Timeline ─────────────────────────────────────────────────────────
+
+# Diurnal envelope amplitude (°C) and occupancy thermal bump per person (°C)
+_DIURNAL_AMPLITUDE_C = 1.5
+_OCCUPANCY_TREND_BUMP_C = 0.08
+_BASELINE_LOOKBACK_HOURS = 3
+# Hardware contract: AC always boots at 20.0°C when transitioning to ON. Any OFF→ON
+# edge re-applies this factory default until the AI emits a new cognitive_action.target.
+AC_FACTORY_DEFAULT_C = 20.0
+
+
+def _compute_past_ac_state(events: list) -> tuple[str, Optional[float]]:
+    """Derive (status, setpoint) for one past hourly bucket from ordered AC events.
+
+    Rules:
+      * status='ON' when any reading in the hour reports ac_status='ON', else 'OFF'.
+      * setpoint=None when status='OFF'.
+      * When ON: setpoint is the mean of per-reading targets where every null/0 target
+        is replaced by AC_FACTORY_DEFAULT_C, and every OFF→ON transition (including the
+        case where the bucket's first reading is already ON) injects an additional
+        AC_FACTORY_DEFAULT_C sample to weight the boot state.
+      * Defensive floor: if the computed mean is still None/0, return AC_FACTORY_DEFAULT_C.
+    """
+    if not events:
+        return "OFF", None
+    samples: list[float] = []
+    on_seen = False
+    prev_on = False
+    for ev in events:
+        is_on = (ev.get("status") == "ON")
+        if is_on:
+            on_seen = True
+            target = ev.get("target")
+            if target is None or target == 0:
+                samples.append(AC_FACTORY_DEFAULT_C)
+            else:
+                samples.append(float(target))
+            if not prev_on:
+                # OFF→ON edge (or bucket-opening ON): hardware boots to factory setpoint
+                samples.append(AC_FACTORY_DEFAULT_C)
+        prev_on = is_on
+    if not on_seen:
+        return "OFF", None
+    if not samples:
+        return "ON", AC_FACTORY_DEFAULT_C
+    avg = sum(samples) / len(samples)
+    if not avg:
+        avg = AC_FACTORY_DEFAULT_C
+    return "ON", round(float(avg), 2)
+
+
+def _timeline_expected_people(schedules: list, anchor: datetime) -> int:
+    naive = anchor.replace(tzinfo=None)
+    dow = naive.weekday()
+    hhmm = naive.time()
+    for s in schedules:
+        if s.day_of_week == dow and s.start_time <= hhmm <= s.end_time:
+            return s.expected_people
+    return 0
+
+
+def _timeline_reservation_for(reservations: list, anchor_naive: datetime) -> Optional[dict]:
+    for r in reservations:
+        if r.start_time <= anchor_naive < r.end_time:
+            return {
+                "id": r.id,
+                "username": r.user.username if r.user else None,
+                "expected_occupancy": r.expected_occupancy,
+                "start_time": r.start_time.isoformat(),
+                "end_time": r.end_time.isoformat(),
+            }
+    return None
+
+
+@router.get("/rooms/{room_id}/timeline")
+async def get_room_timeline(
+    room_id: str,
+    db_sql: Session = Depends(get_db_sql),
+    db_mongo: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """24h room timeline: 12 past hourly buckets + current hour + 12 future predictions.
+
+    Past hours (now-12h … now) aggregate real Mongo sensor readings per hour and the
+    AC cognitive_action snapshot (status + applied setpoint). Configured setpoint is
+    pulled from PostgreSQL (Room.target_temp).
+    Future hours (now … now+12h) compute predicted_temperature from a diurnal drift
+    over the recent baseline plus schedule occupancy, then derive the suggested AC
+    setpoint via calculate_cooling_demand.
+    Reservations that overlap any anchor are injected with username + expected_occupancy.
+    Returns 25 chronologically sorted points.
+    """
+    _require_admin_or_collaborator(current_user)
+
+    room = db_sql.query(Room).filter(Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail=f"Room id='{room_id}' not found.")
+
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(hours=12)
+    end = now + timedelta(hours=12)
+
+    # 25 hour-aligned anchors centred on the current hour floor
+    now_hour = now.replace(minute=0, second=0, microsecond=0)
+    anchors = [now_hour + timedelta(hours=i) for i in range(-12, 13)]
+
+    # PG lookups (sync) — bridged to async via threadpool
+    def _load_pg_context():
+        sensor_ids = [d.id for d in db_sql.query(SensorDevice).filter(SensorDevice.room_id == room_id).all()]
+        start_naive = start.replace(tzinfo=None)
+        end_naive = end.replace(tzinfo=None)
+        reservations = (
+            db_sql.query(Reservation)
+            .filter(
+                Reservation.room_id == room_id,
+                Reservation.start_time < end_naive,
+                Reservation.end_time > start_naive,
+            )
+            .all()
+        )
+        # Force-load user relationship while session is open
+        for r in reservations:
+            _ = r.user.username if r.user else None
+        schedules = db_sql.query(Schedule).filter(Schedule.room_id == room_id).all()
+        return sensor_ids, reservations, schedules
+
+    sensor_ids, reservations, schedules = await run_in_threadpool(_load_pg_context)
+
+    # Aggregate past 12h readings per hour
+    start_iso = start.replace(tzinfo=None).strftime("%Y-%m-%dT%H:%M:%S.%f")
+    now_iso = now.replace(tzinfo=None).strftime("%Y-%m-%dT%H:%M:%S.%f")
+    past_buckets: dict[datetime, dict] = {}
+    if sensor_ids:
+        pipeline = [
+            {"$match": {
+                "sensor_id": {"$in": sensor_ids},
+                "timestamp": {"$gte": start_iso, "$lte": now_iso},
+            }},
+            {"$addFields": {"_ts": {"$dateFromString": {"dateString": "$timestamp"}}}},
+            # Sort BEFORE grouping so $push preserves chronological order — required for
+            # OFF→ON transition detection in _compute_past_ac_state.
+            {"$sort": {"_ts": 1}},
+            {"$group": {
+                "_id": {"$dateToString": {"format": "%Y-%m-%dT%H:00:00", "date": "$_ts"}},
+                "avg_temp": {"$avg": "$temperature"},
+                "avg_humidity": {"$avg": "$humidity"},
+                "avg_co_ppm": {"$avg": "$co_ppm"},
+                "count": {"$sum": 1},
+                "ac_events": {"$push": {
+                    "status": "$cognitive_action.ac_status",
+                    "target": "$cognitive_action.target",
+                }},
+            }},
+        ]
+        try:
+            async for doc in db_mongo["sensor_readings"].aggregate(pipeline):
+                hour_dt = datetime.strptime(doc["_id"], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                past_buckets[hour_dt] = doc
+        except Exception as exc:
+            logger.error("Mongo timeline aggregation failed for room '%s': %s", room_id, exc)
+            raise HTTPException(status_code=503, detail="Sensor history unavailable") from exc
+
+    # Predictive baseline: mean temp of most recent N hourly buckets
+    recent_avg_temps = [
+        past_buckets[h]["avg_temp"]
+        for h in sorted(past_buckets.keys(), reverse=True)[:_BASELINE_LOOKBACK_HOURS]
+        if past_buckets[h].get("avg_temp") is not None
+    ]
+    baseline_temp = (
+        sum(recent_avg_temps) / len(recent_avg_temps)
+        if recent_avg_temps else room.target_temp
+    )
+
+    timeline: list[dict] = []
+    for anchor in anchors:
+        anchor_naive = anchor.replace(tzinfo=None)
+        if anchor < now_hour:
+            phase = "past"
+        elif anchor == now_hour:
+            phase = "current"
+        else:
+            phase = "future"
+
+        point: dict = {
+            "hour": anchor.isoformat(),
+            "phase": phase,
+            "reservation": _timeline_reservation_for(reservations, anchor_naive),
+        }
+
+        if anchor <= now_hour:
+            bucket = past_buckets.get(anchor)
+            if bucket:
+                ac_status, ac_setpoint = _compute_past_ac_state(bucket.get("ac_events", []))
+                point["actual_temperature"] = round(bucket["avg_temp"], 2) if bucket.get("avg_temp") is not None else None
+                point["actual_humidity"] = round(bucket["avg_humidity"], 2) if bucket.get("avg_humidity") is not None else None
+                point["actual_co_ppm"] = round(bucket["avg_co_ppm"], 2) if bucket.get("avg_co_ppm") is not None else None
+                point["readings_count"] = bucket.get("count", 0)
+                point["ac"] = {
+                    "status": ac_status,
+                    "setpoint": ac_setpoint,
+                    "configured_setpoint": room.target_temp,
+                }
+            else:
+                point["actual_temperature"] = None
+                point["actual_humidity"] = None
+                point["actual_co_ppm"] = None
+                point["readings_count"] = 0
+                point["ac"] = {
+                    "status": "OFF",
+                    "setpoint": None,
+                    "configured_setpoint": room.target_temp,
+                }
+        else:
+            # Diurnal sine: peak ~15:00 UTC, trough ~03:00 UTC
+            drift = _DIURNAL_AMPLITUDE_C * math.sin((anchor.hour - 9) / 24.0 * 2 * math.pi)
+            expected_people = _timeline_expected_people(schedules, anchor)
+            occupancy_offset = expected_people * _OCCUPANCY_TREND_BUMP_C
+            predicted_temp = round(baseline_temp + drift + occupancy_offset, 2)
+
+            room_context = {
+                "room_id": room.id,
+                "room_name": room.name,
+                "max_capacity": room.max_capacity,
+                "target_temp": room.target_temp,
+                "expected_people": expected_people,
+                "device_id": sensor_ids[0] if sensor_ids else None,
+            }
+            cog = await calculate_cooling_demand(predicted_temp, room_context, anchor)
+
+            point["predicted_temperature"] = predicted_temp
+            point["expected_people"] = expected_people
+            point["ac"] = {
+                "status": cog.get("ac_status"),
+                "suggested_setpoint": cog.get("target"),
+                "configured_setpoint": room.target_temp,
+                "cooling_mode": cog.get("cooling_mode"),
+                "model": cog.get("model"),
+            }
+
+        timeline.append(point)
+
+    return {
+        "room_id": room.id,
+        "room_name": room.name,
+        "target_temp": room.target_temp,
+        "generated_at": now.isoformat(),
+        "window": {"start": start.isoformat(), "end": end.isoformat()},
+        "baseline_temp": round(baseline_temp, 2),
+        "timeline": timeline,
     }

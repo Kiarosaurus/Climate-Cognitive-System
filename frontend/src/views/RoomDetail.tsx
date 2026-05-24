@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer,
+  ComposedChart, Area, Line, Scatter, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 import {
   ArrowLeft, Building2, RefreshCw, AlertCircle,
@@ -81,6 +81,100 @@ function Toggle({
   )
 }
 
+// ── 24h Timeline types ────────────────────────────────────────────────────────
+
+interface TimelineReservation {
+  id: number
+  username: string | null
+  expected_occupancy: number
+  start_time: string
+  end_time: string
+}
+
+interface TimelineAc {
+  status: string | null
+  setpoint?: number | null
+  suggested_setpoint?: number | null
+  configured_setpoint: number
+  cooling_mode?: string | null
+  model?: string | null
+}
+
+interface TimelinePoint {
+  hour: string
+  phase: 'past' | 'current' | 'future'
+  reservation: TimelineReservation | null
+  actual_temperature?: number | null
+  actual_humidity?: number | null
+  actual_co_ppm?: number | null
+  readings_count?: number
+  predicted_temperature?: number | null
+  expected_people?: number
+  ac: TimelineAc
+}
+
+interface TimelineResponse {
+  room_id: string
+  room_name: string
+  target_temp: number
+  generated_at: string
+  window: { start: string; end: string }
+  baseline_temp: number
+  timeline: TimelinePoint[]
+}
+
+interface TimelineRow {
+  time: string
+  hour_iso: string
+  phase: 'past' | 'current' | 'future'
+  temperatura_real: number | null
+  temperatura_predicha: number | null
+  ac_setpoint: number | null
+  ac_sugerido: number | null
+  reserva: number | null
+  reservation: TimelineReservation | null
+  expected_people: number
+  readings_count: number
+}
+
+const formatHourLabel = (iso: string) =>
+  new Date(iso).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
+
+function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: TimelineRow }> }) {
+  if (!active || !payload?.length) return null
+  const row = payload[0].payload
+  const phaseLabel = row.phase === 'past' ? 'Pasado' : row.phase === 'current' ? 'Ahora' : 'Futuro'
+  return (
+    <div className="bg-slate-900/95 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 shadow-xl min-w-[200px]">
+      <div className="flex items-center justify-between mb-1.5 pb-1.5 border-b border-slate-700/70">
+        <span className="text-slate-100 font-semibold">{row.time}</span>
+        <span className="text-[10px] uppercase tracking-wider text-slate-400">{phaseLabel}</span>
+      </div>
+      {row.temperatura_real != null && (
+        <p>Real: <span className="text-blue-300 font-semibold">{row.temperatura_real.toFixed(2)}°C</span></p>
+      )}
+      {row.temperatura_predicha != null && (
+        <p>Predicha: <span className="text-sky-300 font-semibold">{row.temperatura_predicha.toFixed(2)}°C</span></p>
+      )}
+      {row.ac_setpoint != null && (
+        <p>Setpoint AC: <span className="text-red-300 font-semibold">{row.ac_setpoint.toFixed(2)}°C</span></p>
+      )}
+      {row.ac_sugerido != null && (
+        <p>AC sugerido: <span className="text-red-400 font-semibold">{row.ac_sugerido.toFixed(2)}°C</span></p>
+      )}
+      {row.reservation && (
+        <p className="mt-2 pt-2 border-t border-slate-700 text-emerald-300 leading-snug">
+          Reserva activa agendada por:{' '}
+          <span className="font-semibold text-emerald-200">{row.reservation.username ?? '—'}</span>{' '}
+          | Aforo esperado:{' '}
+          <span className="font-semibold text-emerald-200">{row.reservation.expected_occupancy}</span>{' '}
+          personas
+        </p>
+      )}
+    </div>
+  )
+}
+
 export default function RoomDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -90,6 +184,7 @@ export default function RoomDetail() {
   const [room, setRoom] = useState<RoomInfo | null>(null)
   const [readings, setReadings] = useState<SensorReading[]>([])
   const [devices, setDevices] = useState<SensorDevice[]>([])
+  const [timeline, setTimeline] = useState<TimelineResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [controlError, setControlError] = useState<string | null>(null)
@@ -101,16 +196,19 @@ export default function RoomDetail() {
 
     const fallbackReadings = { data: [] as SensorReading[] }
     const fallbackDevices  = { data: [] as SensorDevice[] }
+    const fallbackTimeline = { data: null as TimelineResponse | null }
 
     Promise.all([
       api.get<RoomInfo>(`/admin/rooms/${id}`),
       api.get<SensorReading[]>(`/sensors/?room_id=${id}&limit=40`).catch(() => fallbackReadings),
       api.get<SensorDevice[]>('/admin/devices').catch(() => fallbackDevices),
+      api.get<TimelineResponse>(`/admin/rooms/${id}/timeline`).catch(() => fallbackTimeline),
     ])
-      .then(([roomRes, readingsRes, devicesRes]) => {
+      .then(([roomRes, readingsRes, devicesRes, timelineRes]) => {
         setRoom(roomRes.data)
         setReadings(readingsRes.data ?? [])
         setDevices((devicesRes.data ?? []).filter(d => d.room_id === id))
+        setTimeline(timelineRes.data ?? null)
       })
       .catch(err => setError(err?.response?.data?.detail ?? 'Error cargando datos del aula.'))
       .finally(() => setLoading(false))
@@ -166,12 +264,32 @@ export default function RoomDetail() {
   const latest = (readings ?? [])[0] ?? null
   const isOn = latest?.cognitive_action?.ac_status === 'ON'
 
-  const chartData = [...(readings ?? [])].reverse().map(r => ({
-    time: new Date(r.timestamp).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' }),
-    temperature: r.temperature,
-    humidity: r.humidity,
-    target: r.cognitive_action?.target ?? null,
-  }))
+  // Build 24h ComposedChart rows from /timeline. Reservation Y-coord is pinned just
+  // above the visible temperature ceiling so Scatter dots sit at the chart top.
+  const timelineRows: TimelineRow[] = (timeline?.timeline ?? []).map(p => {
+    const isPast = p.phase === 'past' || p.phase === 'current'
+    const acOn = p.ac?.status === 'ON'
+    return {
+      time: formatHourLabel(p.hour),
+      hour_iso: p.hour,
+      phase: p.phase,
+      temperatura_real: isPast ? (p.actual_temperature ?? null) : null,
+      temperatura_predicha: !isPast ? (p.predicted_temperature ?? null) : null,
+      ac_setpoint: isPast && acOn ? (p.ac.setpoint ?? null) : null,
+      ac_sugerido: !isPast ? (p.ac.suggested_setpoint ?? null) : null,
+      reserva: null,
+      reservation: p.reservation,
+      expected_people: p.expected_people ?? 0,
+      readings_count: p.readings_count ?? 0,
+    }
+  })
+  const tempPool = timelineRows.flatMap(r =>
+    [r.temperatura_real, r.temperatura_predicha, r.ac_setpoint, r.ac_sugerido]
+      .filter((v): v is number => v != null)
+  )
+  const reservaY = (tempPool.length ? Math.max(...tempPool) : (room?.target_temp ?? 25)) + 2
+  timelineRows.forEach(r => { if (r.reservation) r.reserva = reservaY })
+  const nowLabel = timelineRows.find(r => r.phase === 'current')?.time
 
   if (loading) {
     return (
@@ -324,30 +442,127 @@ export default function RoomDetail() {
         )}
       </div>
 
-      {/* Chart */}
+      {/* 24h Timeline ComposedChart */}
       <div className="bg-slate-800 rounded-xl p-5">
-        <h2 className="text-slate-300 text-sm font-semibold uppercase tracking-wide mb-4">
-          Historial de lecturas
-        </h2>
-        {chartData.length === 0 ? (
-          <div className="h-64 flex items-center justify-center text-slate-500 text-sm">
-            Sin lecturas para este aula
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-slate-300 text-sm font-semibold uppercase tracking-wide">
+            Línea de tiempo 24 h
+          </h2>
+          {timeline && (
+            <span className="text-xs text-slate-500">
+              Generado {new Date(timeline.generated_at).toLocaleTimeString('es')}
+            </span>
+          )}
+        </div>
+        {timelineRows.length === 0 ? (
+          <div className="h-72 flex items-center justify-center text-slate-500 text-sm">
+            Sin línea de tiempo disponible
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="time" stroke="#64748b" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
-              <YAxis stroke="#64748b" tick={{ fontSize: 11 }} />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#e2e8f0' }}
-              />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Line type="monotone" dataKey="temperature" name="Temperatura (°C)" stroke="#3b82f6" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="humidity" name="Humedad (%)" stroke="#06b6d4" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="target" name="Target AC (°C)" stroke="#a78bfa" strokeWidth={1.5} strokeDasharray="5 3" dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
+          <>
+            <ResponsiveContainer width="100%" height={320}>
+              <ComposedChart data={timelineRows} margin={{ top: 24, right: 16, left: 0, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="time" stroke="#64748b" tick={{ fontSize: 11 }} interval={1} />
+                <YAxis
+                  stroke="#64748b"
+                  tick={{ fontSize: 11 }}
+                  domain={['dataMin - 1', 'dataMax + 2']}
+                  allowDecimals={false}
+                />
+                <Tooltip
+                  content={<CustomTooltip />}
+                  cursor={{ stroke: '#475569', strokeDasharray: '2 2' }}
+                />
+                {nowLabel && (
+                  <ReferenceLine
+                    x={nowLabel}
+                    stroke="#eab308"
+                    strokeDasharray="3 3"
+                    label={{ value: 'AHORA', fill: '#eab308', position: 'top', fontSize: 11 }}
+                  />
+                )}
+                {/* Past — real temperature area (azul opaco) + AC setpoint (rojo intermitente) */}
+                <Area
+                  type="monotone"
+                  dataKey="temperatura_real"
+                  stroke="#3b82f6"
+                  fill="#3b82f6"
+                  fillOpacity={0.15}
+                  strokeWidth={2}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="ac_setpoint"
+                  stroke="#ef4444"
+                  strokeDasharray="5 5"
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                />
+                {/* Future — predicted temperature area (azul brillante) + AC sugerido (rojo sólido) */}
+                <Area
+                  type="monotone"
+                  dataKey="temperatura_predicha"
+                  stroke="#60a5fa"
+                  fill="#60a5fa"
+                  fillOpacity={0.4}
+                  strokeWidth={2}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="ac_sugerido"
+                  stroke="#f87171"
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                />
+                {/* Reservation markers — fixed Y above max temp so they crown the chart */}
+                <Scatter
+                  dataKey="reserva"
+                  fill="#10b981"
+                  shape={(props: { cx?: number; cy?: number }) =>
+                    props.cx != null && props.cy != null
+                      ? <circle cx={props.cx} cy={props.cy} r={6} fill="#10b981" stroke="#022c22" strokeWidth={1} />
+                      : <g />
+                  }
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+            {/* Minimalist Tailwind legend — gris y negro */}
+            <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-400 border-t border-slate-700 pt-3">
+              <span className="flex items-center gap-2">
+                <span className="inline-block w-4 h-2 rounded-sm bg-blue-500/20 border border-blue-500" />
+                <span>Temperatura real</span>
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="inline-block w-4 h-2 rounded-sm bg-sky-400/50 border border-sky-400" />
+                <span>Temperatura predicha</span>
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="inline-block w-5 border-t border-dashed border-red-500" />
+                <span>Setpoint AC (pasado)</span>
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="inline-block w-5 border-t-2 border-red-400" />
+                <span>AC sugerido (futuro)</span>
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 border border-emerald-900" />
+                <span>Reserva activa</span>
+              </span>
+              <span className="flex items-center gap-2 text-yellow-500/90">
+                <span className="inline-block w-5 border-t border-dashed border-yellow-500" />
+                <span>AHORA</span>
+              </span>
+            </div>
+          </>
         )}
       </div>
 
