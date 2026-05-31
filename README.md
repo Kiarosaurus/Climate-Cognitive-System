@@ -1,170 +1,349 @@
-# Climate Cognitive System
+# Climate Cognitive System (CCS)
 
-> 📖 [Ver Documentación Extensa de Funcionalidades](./DOCUMENTACION.md)
+> An IoT cognitive platform that turns raw climate-sensor telemetry into **predictive, occupancy-aware air-conditioning decisions** — pre-cooling rooms *before* they fill up, flagging CO emergencies in real time, and quantifying the energy it saves.
 
-Guía técnica para clonar, configurar y levantar el proyecto con Docker.
-
----
-
-## Requisitos
-
-- **Docker** ≥ 24.0
-- **Docker Compose** ≥ 2.0
-- **Node.js** ≥ 18 (solo la primera vez, para generar `frontend/package-lock.json`)
-- **Git**
+> 📖 Spanish functional deep-dive: [DOCUMENTACION.md](./DOCUMENTACION.md)
 
 ---
 
-## 1. Clonar el repositorio
+## Overview
 
-```bash
-git clone https://github.com/<usuario>/Climate-Cognitive-System.git
-cd Climate-Cognitive-System
+Traditional HVAC reacts: it waits for a room to get hot, then cools it. By then the energy is already wasted and the occupants are already uncomfortable. **Climate Cognitive System (CCS)** flips this into a *predictive* loop.
+
+Every sensor reading is enriched with **room context** (capacity, target temperature, and the class/event schedule), fed into a **thermal-load model**, and converted into a concrete cognitive action — `ON / PRE-COOLING`, `STANDBY`, or `DISABLED`. The system anticipates the heat load that *N* people will generate and starts cooling ahead of time, instead of chasing the temperature after the fact.
+
+On top of the control loop, CCS provides:
+
+- A **real-time CO (carbon monoxide) emergency monitor** that separates genuine hardware alerts from simulated/test traffic.
+- An **ROI report** that compares cognitive energy consumption against a traditional "always-on" baseline and reports the savings in **kWh and USD**.
+- A **conversational assistant** (IBM Watson Assistant) embedded in the UI for natural-language queries.
+- **Role-based access control** (admin / collaborator / guest) with reservation-gated device control.
+
+---
+
+## Key Features
+
+- **🧠 Cognitive Cooling Engine** — Predicts thermal load from `[temperature, hour_of_day, expected_people]` and emits a pre-cooling decision per reading. Adjusts the room's target temperature downward by the predicted load offset so cooling starts *before* the heat arrives.
+- **🔀 Dual-Mode Prediction with Graceful Degradation** — Uses a trained scikit-learn `HistGradientBoostingRegressor` when `model.joblib` is present; automatically falls back to a transparent heuristic (`people × thermal_load_per_person`) when it isn't. The API never goes down for lack of a model.
+- **🗄️ Polyglot Persistence** — High-volume, schemaless sensor telemetry lives in **MongoDB**; relational configuration (users, rooms, schedules, devices, reservations) lives in **PostgreSQL**. Each store is used for what it's best at.
+- **🚨 Real-Time CO Emergency Monitor** — Surfaces `CO > 50 ppm` alerts from a rolling 15-second window, with a hard-fallback classifier that buckets each alert as *real* vs *simulated* and self-purges stale simulation data every polling cycle.
+- **💵 ROI / Energy-Savings Report** — Reconstructs AC runtime from the stored `cognitive_action` history, contrasts it against a 100%-uptime traditional baseline, and computes savings in kWh and USD over a 7-day window.
+- **💬 Conversational Assistant** — IBM Watson Assistant integration exposed as a session-based chat endpoint and a floating in-app chat widget.
+- **🔐 RBAC + JWT Auth** — Argon2 password hashing (self-healing admin seed), short-lived JWTs, and reservation-aware authorization (collaborators can only control devices in rooms they currently hold).
+- **🛡️ Resilient Startup** — PostgreSQL connection retries, idempotent in-code schema migrations (handling cases `create_all()` can't), and an auto-seeded admin account.
+- **🐳 Fully Containerized** — One `docker compose up` brings up PostgreSQL, MongoDB, the FastAPI backend, and the React frontend on an isolated bridge network with health checks.
+
+---
+
+## Tech Stack & Architecture
+
+### Backend
+| Layer | Technology |
+|-------|-----------|
+| API framework | **FastAPI** + **Uvicorn** (ASGI), async endpoints |
+| Validation | **Pydantic v2** |
+| Relational DB | **PostgreSQL 15** via **SQLAlchemy 2.0** (`psycopg2`) |
+| Document DB | **MongoDB 6.0** via **Motor** (async) / **PyMongo** |
+| Machine Learning | **scikit-learn** (`HistGradientBoostingRegressor`), **NumPy**, **pandas**, **joblib** |
+| Conversational AI | **IBM Watson Assistant** (`ibm-watson` SDK) |
+| Auth / Security | **JWT** (`python-jose`), **Argon2** hashing (`pwdlib`) |
+
+### Frontend
+| Layer | Technology |
+|-------|-----------|
+| Framework | **React 18** + **TypeScript** |
+| Build tool | **Vite 5** |
+| Styling | **Tailwind CSS 3** |
+| Charts | **Recharts** |
+| HTTP / Auth | **Axios**, **jwt-decode** |
+| Routing | **React Router 6** |
+
+### Infrastructure
+- **Docker** & **Docker Compose** — four-service orchestration (`postgres`, `mongo`, `backend`, `frontend`) on a dedicated bridge network with health-checked dependencies.
+
+### Architecture at a Glance
+
+```
+                         ┌──────────────────────────────┐
+   Sensors / Simulator   │   React + Vite Frontend       │
+        │                │   (dashboards, chat, ROI)     │
+        │ POST readings  └───────────────┬───────────────┘
+        │                                │ REST (Axios + JWT)
+        ▼                                ▼
+┌────────────────────────────────────────────────────────┐
+│                   FastAPI Backend                       │
+│                                                         │
+│  /sensors ─► process_reading ─► get_room_context ───────┼──► PostgreSQL
+│                     │                                   │   (rooms, schedules,
+│                     ▼                                   │    users, devices,
+│             calculate_cooling_demand                    │    reservations)
+│             (ML model  ▸ or ▸  heuristic)               │
+│                     │                                   │
+│                     ▼  cognitive_action                 │
+│             save_reading ───────────────────────────────┼──► MongoDB
+│                                                         │   (sensor_readings)
+│  /chat ──► IBM Watson Assistant                         │
+│  /reports ─► ROI energy-savings calculator              │
+│  /auth ──► JWT + RBAC                                    │
+└─────────────────────────────────────────────────────────┘
+                     ▲
+                     │ python ml_pipeline/*.py
+        ┌────────────┴─────────────┐
+        │  ML Pipeline (offline)    │
+        │  extract_data → train     │
+        │  → backend/app/ml/        │
+        │       model.joblib        │
+        └───────────────────────────┘
+```
+
+**Data-flow highlight:** each ingested reading is matched to its device → room → active schedule, scored for thermal load, tagged with a `cognitive_action`, and persisted. Telemetry from inactive devices is dropped at ingest; control-disabled devices are stored but emit no action. This keeps the hot path lean and the document store free of dead data.
+
+---
+
+## Project Structure
+
+```
+Climate-Cognitive-System/
+├── backend/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── app/
+│       ├── main.py              # App bootstrap, startup hooks, migrations, admin seed
+│       ├── config.py            # Env-driven configuration
+│       ├── database.py          # MongoDB (Motor) connection
+│       ├── database_sql.py      # PostgreSQL (SQLAlchemy) connection
+│       ├── models/              # Pydantic (sensor) + SQLAlchemy (admin) models
+│       ├── routes/              # sensors, admin, chat, auth, reports
+│       ├── services/            # data, predictive, watson services
+│       └── ml/model.joblib      # Trained model (generated by ml_pipeline)
+├── frontend/                    # React + Vite + Tailwind SPA
+│   ├── Dockerfile
+│   ├── package.json
+│   └── src/
+├── ml_pipeline/
+│   ├── extract_data.py          # Mongo → feature CSV (+ synthetic augmentation)
+│   └── train_model.py           # Train & export HistGradientBoostingRegressor
+├── database/
+│   ├── postgres/init.sql
+│   └── mongo/init.js
+├── docker-compose.yml
+└── .env
 ```
 
 ---
 
-## 2. Generar `package-lock.json` (una sola vez)
+## Prerequisites
 
-El build del contenedor de frontend requiere `package-lock.json` para una instalación reproducible.
+- **Docker** ≥ 24.0 & **Docker Compose** ≥ 2.0 (recommended path)
+- **Node.js** ≥ 18 (first run only, to generate `frontend/package-lock.json` for a reproducible image build)
+- **Git**
+- For manual/local runs: **Python 3.12+**, plus a running **PostgreSQL 15** and **MongoDB 6**
+- *(Optional)* IBM Watson Assistant credentials for the chat feature
 
+---
+
+## Installation & Setup
+
+### Option A — Docker Compose (recommended)
+
+```bash
+# 1. Clone
+git clone https://github.com/<user>/Climate-Cognitive-System.git
+cd Climate-Cognitive-System
+
+# 2. Generate package-lock.json (once) — required for the reproducible frontend build
+cd frontend && npm install && cd ..
+
+# 3. Configure environment
+cp .env.example .env   # or create .env manually (see Environment Variables below)
+
+# 4. Launch the full stack (fresh state)
+docker compose down -v
+docker compose up --build -d
+
+# Follow backend logs
+docker compose logs -f backend
+```
+
+Services come up on:
+
+| Service   | URL                         |
+|-----------|-----------------------------|
+| Frontend  | http://localhost:3000       |
+| Backend   | http://localhost:8000       |
+| API docs  | http://localhost:8000/docs  |
+| PostgreSQL| localhost:5432              |
+| MongoDB   | localhost:27017             |
+
+A default admin account is auto-seeded on first startup:
+
+```
+username: admin
+password: admin      # ⚠️ change immediately after first login in production
+```
+
+### Option B — Manual / Local Dev
+
+**Backend**
+```bash
+cd backend
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+# Ensure Postgres & Mongo are running and env vars are set
+uvicorn app.main:app --reload --port 8000
+```
+
+**Frontend**
 ```bash
 cd frontend
 npm install
-cd ..
+npm run dev          # Vite dev server
 ```
 
----
+### Environment Variables (`.env`)
 
-## 3. Configurar variables de entorno
-
-Crear el archivo `.env` en la raíz del proyecto:
-
-```bash
-cp .env.example .env   # si existe la plantilla
-# o crearlo manualmente con un editor
-```
-
-Contenido mínimo del archivo `.env`:
-
-```env
-# --- PostgreSQL ---
+```ini
+# Databases
+MONGO_URI=mongodb://mongo:27017
+POSTGRES_URI=postgresql://postgres:postgres@postgres:5432/climate_db
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
 POSTGRES_DB=climate_db
 
-# --- Seguridad / JWT ---
-SECRET_KEY=cambia-esto-por-una-cadena-aleatoria-de-256-bits
+# Auth
+SECRET_KEY=<random-hex>           # auto-generated in memory if omitted (tokens reset on restart)
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=15
 
-# --- IBM Watson Assistant (opcional) ---
+# IBM Watson Assistant (optional — chat returns 503 if unset)
 WATSON_API_KEY=
 WATSON_URL=
 WATSON_ASSISTANT_ID=
-WATSON_EXTENSION_KEY=
+WATSON_EXTENSION_KEY=             # API key protecting /sensors and /chat
 ```
 
-> ⚠️ Si `SECRET_KEY` queda vacío, el backend genera uno aleatorio en memoria al arrancar — todos los tokens caducan al reiniciar el contenedor.
+> ⚠️ If `SECRET_KEY` is left empty, the backend generates a random one in memory at boot — every token expires when the container restarts.
 
 ---
 
-## 4. Levantar el stack
+## Usage
 
-Limpiar contenedores y volúmenes previos (estado fresco):
-
+### Health check
 ```bash
-docker compose down -v
+curl http://localhost:8000/health
+# {"status":"ok"}
 ```
 
-Construir y levantar todos los servicios en segundo plano:
-
+### Authenticate (obtain a JWT)
 ```bash
-docker compose up --build -d
+curl -X POST http://localhost:8000/api/v1/auth/login \
+  -d "username=admin&password=admin"
+# → { "access_token": "...", "token_type": "bearer" }
 ```
 
-Ver logs en vivo:
+### Ingest a sensor reading
+> The `/sensors` and `/chat` routers are protected by the `WATSON_EXTENSION_KEY` API key.
 
 ```bash
-docker compose logs -f backend
+curl -X POST http://localhost:8000/api/v1/sensors/ \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $WATSON_EXTENSION_KEY" \
+  -d '{
+        "sensor_id": "sensor-001",
+        "temperature": 28.5,
+        "humidity": 60,
+        "co2_ppm": 800,
+        "co_ppm": 5
+      }'
 ```
 
-Detener el stack (conservando volúmenes):
+Example response — note the predicted cognitive action:
 
+```json
+{
+  "sensor_id": "sensor-001",
+  "anomaly_detected": false,
+  "inserted_id": "...",
+  "cognitive_action": {
+    "ac_status": "ON",
+    "cooling_mode": "PRE-COOLING",
+    "target": 21.85,
+    "thermal_load_offset": 0.15,
+    "model": "ml"
+  },
+  "room_context": { "room_name": "Lab A", "expected_people": 30 }
+}
+```
+
+### Poll CO emergencies (admin / collaborator)
 ```bash
-docker compose down
+curl http://localhost:8000/api/v1/sensors/emergencies \
+  -H "Authorization: Bearer $TOKEN"
+# → { "real": [...], "simulated": [...] }
+```
+
+### Chat with the assistant
+```bash
+curl -X POST http://localhost:8000/api/v1/chat/ \
+  -H "X-API-Key: $WATSON_EXTENSION_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "message": "What is the temperature in Lab A?" }'
 ```
 
 ---
 
-## 5. Puertos locales expuestos
+## Training the Predictive Model
 
-| Servicio              | URL                              | Puerto |
-| --------------------- | -------------------------------- | ------ |
-| Frontend (React)      | http://localhost:3000            | 3000   |
-| Backend API (FastAPI) | http://localhost:8000            | 8000   |
-| Swagger / OpenAPI     | http://localhost:8000/docs       | 8000   |
-| PostgreSQL            | postgresql://localhost:5432      | 5432   |
-| MongoDB               | mongodb://localhost:27017        | 27017  |
-
----
-
-## 6. Credenciales por defecto
-
-| Campo      | Valor   |
-| ---------- | ------- |
-| Usuario    | `admin` |
-| Contraseña | `admin` |
-
-> 🔒 Cambiar la contraseña inmediatamente tras el primer login en producción.
-
----
-
-## 7. Comandos útiles
-
-Reconstruir un único servicio:
+The cooling engine runs on a heuristic fallback out of the box. To train and deploy the ML model:
 
 ```bash
+# From project root, with MONGO_URI reachable
+python ml_pipeline/extract_data.py    # Mongo → ml_pipeline/data/features.csv
+python ml_pipeline/train_model.py     # → backend/app/ml/model.joblib
+```
+
+- **`extract_data.py`** pulls `sensor_readings` from MongoDB, engineers time features (`hour_of_day`, `day_of_week`), derives the `target_temp_offset` label, and **augments with synthetic rows** when real data is sparse (≥ 50 docs → augment to ≥ 100; otherwise generate 2,000 synthetic rows). This lets the model train meaningfully even on a cold dataset.
+- **`train_model.py`** fits a `HistGradientBoostingRegressor`, prints **RMSE / R²** and feature importances, and exports `model.joblib`. On the next backend startup the model is picked up automatically (ML mode) — no code change needed.
+
+---
+
+## API Surface
+
+| Method | Endpoint                              | Auth               | Purpose                                      |
+|--------|---------------------------------------|--------------------|----------------------------------------------|
+| GET    | `/health`                             | —                  | Liveness probe                               |
+| POST   | `/api/v1/auth/login`                  | —                  | Obtain JWT                                    |
+| POST   | `/api/v1/sensors/`                    | API key            | Ingest reading + cognitive action             |
+| GET    | `/api/v1/sensors/`                    | API key            | List recent readings (filter by room/sensor)  |
+| GET    | `/api/v1/sensors/emergencies`         | JWT (admin/collab) | Real-time CO alerts                           |
+| PUT    | `/api/v1/sensors/{id}/control`        | JWT                | Toggle device active / control-enabled         |
+| POST   | `/api/v1/chat/`                       | API key            | Watson Assistant conversation                  |
+| GET    | `/api/v1/reports/...`                 | JWT (admin)        | ROI / energy-savings report                   |
+| *      | `/api/v1/admin/...`                   | JWT (admin)        | Manage users, rooms, schedules, reservations   |
+
+Full interactive documentation is available at **`/docs`** (Swagger UI) when the backend is running.
+
+---
+
+## Useful Docker Commands
+
+```bash
+# Rebuild a single service
 docker compose up --build -d backend
 docker compose up --build -d frontend
-```
 
-Acceder al shell de un contenedor:
-
-```bash
+# Open a shell inside a container
 docker compose exec backend bash
 docker compose exec postgres psql -U postgres -d climate_db
 docker compose exec mongo mongosh
-```
 
-Eliminar todo (contenedores + volúmenes + redes):
-
-```bash
+# Stop (keep volumes) / tear everything down
+docker compose down
 docker compose down -v --remove-orphans
 ```
 
 ---
 
-## 8. Estructura mínima esperada
+## License
 
-```
-Climate-Cognitive-System/
-├── backend/              # FastAPI + SQLAlchemy + Motor
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   └── app/
-├── frontend/             # React + Vite + TypeScript
-│   ├── Dockerfile
-│   ├── package.json
-│   └── src/
-├── database/
-│   ├── postgres/init.sql
-│   └── mongo/init.js
-├── docker-compose.yml
-├── .env
-└── README.md
-```
-
----
-
-Para detalles funcionales, arquitectura, roles, endpoints y motor cognitivo, consultar [DOCUMENTACION.md](./DOCUMENTACION.md).
+Add your license of choice here (e.g. MIT).
