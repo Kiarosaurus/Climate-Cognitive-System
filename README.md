@@ -148,7 +148,7 @@ Climate-Cognitive-System/
 
 ```bash
 # 1. Clone
-git clone https://github.com/<user>/Climate-Cognitive-System.git
+git clone https://github.com/Kiarosaurus/Climate-Cognitive-System.git
 cd Climate-Cognitive-System
 
 # 2. Generate package-lock.json (once) — required for the reproducible frontend build
@@ -341,9 +341,3 @@ docker compose exec mongo mongosh
 docker compose down
 docker compose down -v --remove-orphans
 ```
-
----
-
-## License
-
-Add your license of choice here (e.g. MIT).
