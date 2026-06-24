@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import axios from 'axios'
 import api from '../api/client'
+import { useAuth } from '../context/AuthContext'
 import type { CombinedReading, ReadingInput } from '../types'
 import {
   MetricCard, StatusLegend, STATUS_TOKENS,
@@ -144,6 +145,9 @@ export default function GlobalDashboard() {
   const [readings, setReadings] = useState<CombinedReading[]>([])
   const [apiOnline, setApiOnline] = useState<boolean | null>(null)
   const [engine, setEngine] = useState<'ml' | 'heuristic' | null>(null)
+  const [reloadingModel, setReloadingModel] = useState(false)
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<ReadingInput>({ sensor_id: SENSOR_IDS[0], temperature: 24.5, humidity: 55, co2_ppm: 800, co_ppm: 0 })
@@ -157,6 +161,16 @@ export default function GlobalDashboard() {
       setApiOnline(true)
       setEngine(data?.engine ?? null)
     } catch { setApiOnline(false) }
+  }, [])
+
+  // Pick up a freshly trained model.joblib without restarting the backend.
+  const reloadModel = useCallback(async () => {
+    setReloadingModel(true)
+    try {
+      const { data } = await api.post<{ engine?: 'ml' | 'heuristic' }>('/admin/model/reload')
+      setEngine(data?.engine ?? null)
+    } catch { /* surfaced via the unchanged badge */ }
+    finally { setReloadingModel(false) }
   }, [])
 
   useEffect(() => {
@@ -297,6 +311,17 @@ export default function GlobalDashboard() {
                 {engine === 'ml' ? <BrainCircuit size={12} /> : <Cpu size={12} />}
                 Motor: {engine === 'ml' ? 'ML' : 'Heurístico'}
               </span>
+            )}
+            {isAdmin && (
+              <button
+                onClick={reloadModel}
+                disabled={reloadingModel}
+                title="Recargar modelo ML desde disco (tras reentrenar)"
+                className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-100 disabled:opacity-50 border border-slate-700 hover:border-slate-600 rounded-full px-2 py-0.5 transition-colors"
+              >
+                <RefreshCw size={12} className={reloadingModel ? 'animate-spin' : ''} />
+                {reloadingModel ? 'Recargando…' : 'Recargar modelo'}
+              </button>
             )}
             {apiOnline === null
               ? <span className="flex items-center gap-1 text-slate-400"><RefreshCw size={13} className="animate-spin" /> Verificando…</span>

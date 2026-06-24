@@ -191,6 +191,22 @@ def update_room_policy(
     return {"id": room.id, "control_policy": room.control_policy}
 
 
+@router.post("/model/reload")
+def reload_model(current_user: User = Depends(get_current_user)):
+    """Reload the ML model from disk without restarting the backend.
+
+    Run the training pipeline (ml_pipeline/extract_data.py → train_model.py) to
+    regenerate model.joblib, then call this to pick it up live. Admin-only.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Solo un administrador puede recargar el modelo.")
+    from app.services.predictive_service import load_model, active_engine
+    load_model()
+    engine = active_engine()
+    logger.info("Admin '%s' reloaded ML model — engine now '%s'.", current_user.username, engine)
+    return {"engine": engine, "model_loaded": engine == "ml"}
+
+
 @router.post("/rooms", status_code=201)
 def create_room(
     payload: RoomCreateIn,
