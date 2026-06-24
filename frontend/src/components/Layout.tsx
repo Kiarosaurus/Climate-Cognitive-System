@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Building2, Cpu, CalendarDays,
   Users, LogOut, ChevronRight, Building, TrendingUp,
-  AlertTriangle, X, ShieldAlert, Menu,
+  AlertTriangle, X, ShieldAlert, Menu, Clock, ChevronDown,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useEmergency } from '../context/EmergencyContext'
@@ -35,7 +35,30 @@ export default function Layout() {
 
   // Mobile off-canvas sidebar — collapsed by default, auto-closes on route change.
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  useEffect(() => { setMobileNavOpen(false) }, [location.pathname])
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const userMenuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { setMobileNavOpen(false); setUserMenuOpen(false) }, [location.pathname])
+
+  // Close the navbar user menu when clicking outside it.
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setUserMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [])
+
+  // Navbar clock pill — HH:MM refreshed each minute.
+  const [clock, setClock] = useState(() =>
+    new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
+  )
+  useEffect(() => {
+    const t = setInterval(
+      () => setClock(new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })),
+      60_000,
+    )
+    return () => clearInterval(t)
+  }, [])
 
   function handleLogout() {
     logout()
@@ -106,7 +129,7 @@ export default function Layout() {
   }
 
   return (
-    <div className="flex h-[100dvh] bg-slate-900 text-slate-100 overflow-hidden">
+    <div className="h-[100dvh] bg-slate-900 text-slate-100 overflow-hidden">
 
       {/* ── Session expired modal — highest priority, blocks all interaction ── */}
       {isSessionExpired && (
@@ -200,37 +223,105 @@ export default function Layout() {
       {/* Mobile backdrop — only when drawer open, below md */}
       {mobileNavOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/60 lg:hidden"
+          className="fixed inset-0 z-30 bg-black/60 lg:hidden"
           onClick={() => setMobileNavOpen(false)}
           aria-hidden="true"
         />
       )}
 
-      {/* Sidebar — static column on md+, off-canvas drawer below md */}
-      <aside
-        className={`fixed lg:static inset-y-0 left-0 z-50 w-64 lg:w-56 shrink-0 flex flex-col bg-slate-800 border-r border-slate-700 transform transition-transform duration-200 ease-out lg:translate-x-0 ${
-          mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
-        {/* Logo */}
-        <div className="flex items-center gap-2.5 px-5 py-5 border-b border-slate-700">
+      {/* ── Navbar — fixed, full-width top bar (52px) ── */}
+      <header className="fixed top-0 left-0 right-0 z-50 h-[52px] flex items-center justify-between px-5 bg-[#0a1520] border-b border-slate-700">
+        {/* Left — hamburger (mobile) + logo + name */}
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setMobileNavOpen(true)}
+            className="p-1.5 -ml-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-700 transition-colors lg:hidden"
+            aria-label="Abrir menú"
+          >
+            <Menu size={20} />
+          </button>
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-600/15 border border-blue-500/30">
             <Logo size={22} />
           </div>
           <span className="font-bold text-sm text-white leading-tight">
-            Climate<br />
-            <span className="text-blue-400">Cognitive</span>
+            Climate <span className="text-blue-400">Cognitive</span>
           </span>
-          <button
-            onClick={() => setMobileNavOpen(false)}
-            className="ml-auto p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-700 transition-colors lg:hidden"
-            aria-label="Cerrar menú"
-          >
-            <X size={18} />
-          </button>
         </div>
 
-        {/* Nav */}
+        {/* Right — status pills + separator + user chip */}
+        <div className="flex items-center gap-3">
+          {isAnyVisible && (
+            <span className={`hidden sm:flex items-center gap-1.5 text-xs font-semibold animate-pulse ${badgeColor}`}>
+              <AlertTriangle size={13} /> {badgeText}
+            </span>
+          )}
+
+          {/* System status pill — same "Sistema activo" state */}
+          <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-green-300 rounded-full px-2.5 py-1 bg-green-500/10 border border-green-500/25">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+            En línea
+          </span>
+
+          {/* Current-time pill — refreshed each minute */}
+          <span className="hidden md:inline-flex items-center gap-1.5 text-xs text-sky-300 rounded-full px-2.5 py-1 bg-sky-400/[0.08] border border-sky-400/20 tabular-nums">
+            <Clock size={12} /> {clock}
+          </span>
+
+          {/* Vertical separator */}
+          <span className="hidden sm:block w-px h-[18px] bg-[#2a4060]" />
+
+          {/* User chip + dropdown */}
+          <div className="relative" ref={userMenuRef}>
+            <button
+              onClick={() => setUserMenuOpen(o => !o)}
+              className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-slate-700/60 transition-colors"
+            >
+              <div className="w-7 h-7 rounded-full bg-blue-600/30 flex items-center justify-center text-xs font-bold text-blue-300">
+                {user?.username?.[0]?.toUpperCase() ?? '?'}
+              </div>
+              <span className="hidden sm:block text-sm font-medium text-slate-200 max-w-[120px] truncate">{user?.username}</span>
+              <ChevronDown size={14} className={`text-slate-400 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {userMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-52 bg-slate-800 border border-slate-700 rounded-lg shadow-2xl overflow-hidden z-50">
+                {/* Perfil — user info (moved from sidebar footer) */}
+                <div className="flex items-center gap-2.5 px-3 py-3 border-b border-slate-700">
+                  <div className="w-8 h-8 rounded-full bg-blue-600/30 flex items-center justify-center text-sm font-bold text-blue-300">
+                    {user?.username?.[0]?.toUpperCase() ?? '?'}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-200 truncate">{user?.username}</p>
+                    <p className="text-xs text-slate-500 capitalize">{user?.role}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-slate-400 hover:text-red-400 hover:bg-red-900/20 transition-colors"
+                >
+                  <LogOut size={15} /> Cerrar sesión
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* ── Sidebar — fixed below navbar, navigation only ── */}
+      <aside
+        className={`fixed top-[52px] left-0 z-40 w-64 lg:w-56 h-[calc(100dvh-52px)] flex flex-col bg-slate-800 border-r border-slate-700 transform transition-transform duration-200 ease-out lg:translate-x-0 ${
+          mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        {/* Close button — mobile only */}
+        <button
+          onClick={() => setMobileNavOpen(false)}
+          className="self-end m-2 p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-700 transition-colors lg:hidden"
+          aria-label="Cerrar menú"
+        >
+          <X size={18} />
+        </button>
+
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
           {visible.map(item => (
             <NavLink
@@ -251,54 +342,12 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-
-        {/* User info + logout */}
-        <div className="px-3 pb-4 border-t border-slate-700 pt-3">
-          <div className="flex items-center gap-2 px-2 mb-2">
-            <div className="w-7 h-7 rounded-full bg-blue-600/30 flex items-center justify-center text-xs font-bold text-blue-300">
-              {user?.username?.[0]?.toUpperCase() ?? '?'}
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-medium text-slate-200 truncate">{user?.username}</p>
-              <p className="text-xs text-slate-500 capitalize">{user?.role}</p>
-            </div>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-red-400 hover:bg-red-900/20 transition-colors"
-          >
-            <LogOut size={14} /> Cerrar sesión
-          </button>
-        </div>
       </aside>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Topbar */}
-        <header className="h-14 shrink-0 flex items-center justify-between px-4 sm:px-6 bg-slate-800/50 border-b border-slate-700 backdrop-blur-sm">
-          <button
-            onClick={() => setMobileNavOpen(true)}
-            className="p-2 -ml-2 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-700 transition-colors lg:hidden"
-            aria-label="Abrir menú"
-          >
-            <Menu size={20} />
-          </button>
-          <div className="flex items-center gap-2 text-xs text-slate-400 ml-auto">
-            {isAnyVisible && (
-              <span className={`flex items-center gap-1.5 font-semibold animate-pulse mr-2 ${badgeColor}`}>
-                <AlertTriangle size={13} /> {badgeText}
-              </span>
-            )}
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            Sistema activo
-          </div>
-        </header>
-
-        {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-          <Outlet />
-        </main>
-      </div>
+      {/* ── Main content — offset by navbar height + sidebar width ── */}
+      <main className="mt-[52px] lg:ml-56 h-[calc(100dvh-52px)] overflow-y-auto p-4 sm:p-6">
+        <Outlet />
+      </main>
 
       {/* ── Persistent emergency button (bottom-right, left of FloatingChat) ── */}
       {isAnyVisible && (
