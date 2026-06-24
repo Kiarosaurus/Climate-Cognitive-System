@@ -90,7 +90,10 @@ function loadLabel(offset?: number): { text: string; status: MetricStatus } {
 const LEVEL_TO_STATUS: Record<SensorLevel, MetricStatus> = {
   normal: 'normal', atencion: 'warning', elevado: 'elevated', alerta: 'alert',
 }
+// Non-normal levels → exact threshold palette; normal → undefined so the card
+// falls back to STATUS_TOKENS.normal (verde esmeralda del "sistema de colores de estado").
 function levelTone(level: SensorLevel) {
+  if (level === 'normal') return undefined
   const tk = sensorTokens(level)
   return { bar: tk.bar, ring: tk.ring, icon: tk.text }
 }
