@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Building2, Cpu, CalendarDays,
-  Users, LogOut, Thermometer, ChevronRight, Building, TrendingUp,
+  Users, LogOut, ChevronRight, Building, TrendingUp,
   AlertTriangle, X, ShieldAlert, Menu,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useEmergency } from '../context/EmergencyContext'
 import FloatingChat from './FloatingChat'
+import Logo from './Logo'
 
 interface NavItem {
   to: string
@@ -199,7 +200,7 @@ export default function Layout() {
       {/* Mobile backdrop — only when drawer open, below md */}
       {mobileNavOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/60 md:hidden"
+          className="fixed inset-0 z-40 bg-black/60 lg:hidden"
           onClick={() => setMobileNavOpen(false)}
           aria-hidden="true"
         />
@@ -207,14 +208,14 @@ export default function Layout() {
 
       {/* Sidebar — static column on md+, off-canvas drawer below md */}
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-50 w-64 md:w-56 shrink-0 flex flex-col bg-slate-800 border-r border-slate-700 transform transition-transform duration-200 ease-out md:translate-x-0 ${
+        className={`fixed lg:static inset-y-0 left-0 z-50 w-64 lg:w-56 shrink-0 flex flex-col bg-slate-800 border-r border-slate-700 transform transition-transform duration-200 ease-out lg:translate-x-0 ${
           mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         {/* Logo */}
         <div className="flex items-center gap-2.5 px-5 py-5 border-b border-slate-700">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30">
-            <Thermometer size={16} className="text-blue-400" />
+          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-600/15 border border-blue-500/30">
+            <Logo size={22} />
           </div>
           <span className="font-bold text-sm text-white leading-tight">
             Climate<br />
@@ -222,7 +223,7 @@ export default function Layout() {
           </span>
           <button
             onClick={() => setMobileNavOpen(false)}
-            className="ml-auto p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-700 transition-colors md:hidden"
+            className="ml-auto p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-700 transition-colors lg:hidden"
             aria-label="Cerrar menú"
           >
             <X size={18} />
@@ -237,16 +238,16 @@ export default function Layout() {
               to={item.to}
               end={item.to === '/'}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                `group flex items-center gap-3 px-3 py-2 rounded-lg text-sm border transition-colors ${
                   isActive
-                    ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30'
-                    : 'text-slate-400 hover:text-slate-100 hover:bg-slate-700/60'
+                    ? 'bg-blue-600/20 text-blue-300 border-blue-500/30'
+                    : 'text-slate-400 border-transparent hover:bg-slate-700 hover:text-white hover:border-slate-600/70'
                 }`
               }
             >
               {item.icon}
               <span className="flex-1">{item.label}</span>
-              <ChevronRight size={13} className="opacity-40" />
+              <ChevronRight size={13} className="opacity-30 transition-all group-hover:opacity-100 group-hover:translate-x-0.5" />
             </NavLink>
           ))}
         </nav>
@@ -277,7 +278,7 @@ export default function Layout() {
         <header className="h-14 shrink-0 flex items-center justify-between px-4 sm:px-6 bg-slate-800/50 border-b border-slate-700 backdrop-blur-sm">
           <button
             onClick={() => setMobileNavOpen(true)}
-            className="p-2 -ml-2 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-700 transition-colors md:hidden"
+            className="p-2 -ml-2 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-700 transition-colors lg:hidden"
             aria-label="Abrir menú"
           >
             <Menu size={20} />
