@@ -6,6 +6,10 @@ export interface SelectOption {
   label: string
 }
 
+// Approx rendered height of one option row (px-3 py-2.5 text-sm + 1px divider),
+// used to cap the popover at `maxVisibleItems` rows before it scrolls.
+const ITEM_HEIGHT = 41
+
 interface Props {
   options: SelectOption[]
   value: string
@@ -13,6 +17,7 @@ interface Props {
   placeholder?: string
   label?: string
   icon?: React.ReactNode
+  maxVisibleItems?: number   // visible rows before the list scrolls
 }
 
 export default function SearchableSelect({
@@ -22,6 +27,7 @@ export default function SearchableSelect({
   placeholder = 'Selecciona…',
   label,
   icon,
+  maxVisibleItems = 5,
 }: Props) {
   const [inputText, setInputText] = useState('')
   const [open, setOpen] = useState(false)
@@ -98,7 +104,10 @@ export default function SearchableSelect({
         )}
 
         {open && filtered.length > 0 && (
-          <ul className="absolute z-20 left-0 right-0 mt-1 bg-slate-900 border border-slate-600 rounded-lg shadow-2xl max-h-56 overflow-y-auto">
+          <ul
+            style={{ maxHeight: `${maxVisibleItems * ITEM_HEIGHT}px` }}
+            className="absolute z-50 left-0 right-0 mt-1 bg-slate-900 border border-slate-600 rounded-lg shadow-2xl overflow-y-auto overscroll-contain"
+          >
             {filtered.map(opt => (
               <li
                 key={opt.value}
@@ -116,7 +125,7 @@ export default function SearchableSelect({
         )}
 
         {open && inputText.trim() && filtered.length === 0 && (
-          <div className="absolute z-20 left-0 right-0 mt-1 bg-slate-900 border border-slate-600 rounded-lg shadow-xl px-3 py-3 text-sm text-slate-500">
+          <div className="absolute z-50 left-0 right-0 mt-1 bg-slate-900 border border-slate-600 rounded-lg shadow-xl px-3 py-3 text-sm text-slate-500">
             Sin resultados para "{inputText}"
           </div>
         )}

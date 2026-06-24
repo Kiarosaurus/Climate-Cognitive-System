@@ -572,6 +572,7 @@ export default function GlobalDashboard() {
               placeholder="Selecciona un sensor…"
               label="Sensor ID"
               icon={<Cpu size={16} />}
+              maxVisibleItems={2}
             />
             {(['temperature', 'humidity', 'co2_ppm', 'co_ppm'] as const).map(field => (
               <div key={field}>
