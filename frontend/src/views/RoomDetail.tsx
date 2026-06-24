@@ -46,7 +46,7 @@ const POLICY_CARDS: { value: string; label: string; desc: string; Icon: LucideIc
     value: 'manual',
     label: 'Manual',
     Icon: SlidersHorizontal,
-    desc: 'El administrador define el setpoint directamente. El sistema emite acciones sin adaptación cognitiva. Solo para mantenimiento o cuando el sistema cognitivo está en revisión.',
+    desc: 'El administrador define el setpoint directamente, emitiendo acciones sin adaptación cognitiva, solo para mantenimiento o revisión.',
   },
 ]
 
