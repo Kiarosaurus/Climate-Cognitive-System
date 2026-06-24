@@ -107,7 +107,7 @@ function CognitivePanel({ reading }: { reading: CombinedReading | null }) {
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className={`w-10 h-10 rounded-full ring-1 flex items-center justify-center shrink-0 ${
-            isOn ? 'bg-blue-500/15 ring-blue-500/40 text-blue-400' : 'bg-slate-700/50 ring-slate-600/50 text-slate-400'
+            isOn ? 'bg-purple-500/15 ring-purple-500/40 text-purple-400' : 'bg-slate-700/50 ring-slate-600/50 text-slate-400'
           }`}>
             <BrainCircuit size={20} />
           </span>
@@ -121,7 +121,7 @@ function CognitivePanel({ reading }: { reading: CombinedReading | null }) {
           </div>
         </div>
         {action?.model && action.model !== 'none' && (
-          <span className="text-xs font-medium text-blue-300 bg-blue-500/10 border border-blue-500/30 px-2.5 py-1 rounded-full capitalize shrink-0">
+          <span className="text-xs font-medium text-violet-300 bg-violet-500/10 border border-violet-500/30 px-2.5 py-1 rounded-full capitalize shrink-0">
             {action.model}
           </span>
         )}
