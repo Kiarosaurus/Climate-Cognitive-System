@@ -6,7 +6,7 @@ import {
 import {
   Thermometer, Droplets, Wind, AlertTriangle,
   CheckCircle, RefreshCw, Send, Clock, FlaskConical, CloudFog,
-  BrainCircuit, Inbox, Cpu,
+  BrainCircuit, Inbox, Cpu, LayoutDashboard,
 } from 'lucide-react'
 import axios from 'axios'
 import api from '../api/client'
@@ -310,9 +310,12 @@ export default function GlobalDashboard() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-white">Dashboard Global</h1>
-          <p className="text-sm text-slate-400">Monitoreo en tiempo real</p>
+        <div className="flex items-center gap-3">
+          <LayoutDashboard size={22} className="text-blue-400" />
+          <div>
+            <h1 className="text-xl font-bold text-white">Dashboard Global</h1>
+            <p className="text-sm text-slate-400">Monitoreo en tiempo real</p>
+          </div>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           {/* Data source toggle: persisted real readings vs synthetic buffer */}

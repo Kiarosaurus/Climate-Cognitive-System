@@ -115,9 +115,12 @@ export default function RoomSearch() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-bold text-white">Aulas</h1>
-        <p className="text-sm text-slate-400">Selecciona un aula para ver su dashboard cognitivo</p>
+      <div className="flex items-center gap-3">
+        <Building2 size={22} className="text-blue-400" />
+        <div>
+          <h1 className="text-xl font-bold text-white">Aulas</h1>
+          <p className="text-sm text-slate-400">Selecciona un aula para ver su dashboard cognitivo</p>
+        </div>
       </div>
 
       {/* Search bar */}
