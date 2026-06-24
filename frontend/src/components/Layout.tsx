@@ -285,8 +285,8 @@ export default function Layout() {
 
             {userMenuOpen && (
               <div className="absolute right-0 top-full mt-2 w-52 bg-slate-800 border border-slate-700 rounded-lg shadow-2xl overflow-hidden z-50">
-                {/* Perfil — user info (moved from sidebar footer) */}
-                <div className="flex items-center gap-2.5 px-3 py-3 border-b border-slate-700">
+                {/* Perfil — user info */}
+                <div className="flex items-center gap-2.5 px-3 py-3">
                   <div className="w-8 h-8 rounded-full bg-blue-600/30 flex items-center justify-center text-sm font-bold text-blue-300">
                     {user?.username?.[0]?.toUpperCase() ?? '?'}
                   </div>
@@ -295,12 +295,6 @@ export default function Layout() {
                     <p className="text-xs text-slate-500 capitalize">{user?.role}</p>
                   </div>
                 </div>
-                <button
-                  onClick={handleLogout}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-slate-400 hover:text-red-400 hover:bg-red-900/20 transition-colors"
-                >
-                  <LogOut size={15} /> Cerrar sesión
-                </button>
               </div>
             )}
           </div>
@@ -342,6 +336,16 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
+
+        {/* Footer — logout */}
+        <div className="px-3 pb-4 pt-3 border-t border-slate-700">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-400 hover:text-red-400 hover:bg-red-900/20 transition-colors"
+          >
+            <LogOut size={15} /> Cerrar sesión
+          </button>
+        </div>
       </aside>
 
       {/* ── Main content — offset by navbar height + sidebar width ── */}
