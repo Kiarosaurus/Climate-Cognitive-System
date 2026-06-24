@@ -5,6 +5,7 @@ import {
   RefreshCw, AlertCircle, Zap, ZapOff, HelpCircle,
 } from 'lucide-react'
 import api from '../api/client'
+import { EmptyState } from '../components/EmptyState'
 
 interface Room {
   id: number
@@ -147,9 +148,21 @@ export default function RoomSearch() {
 
       {/* Empty */}
       {!loading && !error && filtered.length === 0 && (
-        <p className="text-slate-500 text-sm py-8 text-center">
-          {query ? `Sin resultados para "${query}"` : 'No hay aulas registradas.'}
-        </p>
+        query ? (
+          <EmptyState
+            icon={<Search size={22} />}
+            title="Sin resultados"
+            hint={`Ninguna aula coincide con "${query}".`}
+            action={{ label: 'Limpiar búsqueda', onClick: () => setQuery('') }}
+          />
+        ) : (
+          <EmptyState
+            icon={<Building2 size={22} />}
+            title="Aún no hay aulas"
+            hint="Registra tu primera aula para verla y abrir su dashboard cognitivo."
+            action={{ label: 'Registrar un aula', onClick: () => navigate('/infrastructure') }}
+          />
+        )
       )}
 
       {/* Card grid */}

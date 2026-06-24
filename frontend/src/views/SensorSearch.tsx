@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Search, RefreshCw, AlertCircle, CheckCircle, XCircle, Cpu } from 'lucide-react'
 import api from '../api/client'
+import { EmptyState } from '../components/EmptyState'
 
 interface SensorDevice {
   sensor_id: string
@@ -13,6 +15,7 @@ interface SensorDevice {
 type SortKey = 'sensor_id' | 'room_name' | 'is_active' | 'control_enabled'
 
 export default function SensorSearch() {
+  const navigate = useNavigate()
   const [sensors, setSensors] = useState<SensorDevice[]>([])
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
@@ -153,8 +156,22 @@ export default function SensorSearch() {
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-10 text-slate-500 text-sm">
-                    {query ? `Sin resultados para "${query}"` : 'No hay sensores registrados.'}
+                  <td colSpan={5} className="px-4">
+                    {query ? (
+                      <EmptyState
+                        icon={<Search size={22} />}
+                        title="Sin resultados"
+                        hint={`Ningún sensor coincide con "${query}".`}
+                        action={{ label: 'Limpiar búsqueda', onClick: () => setQuery('') }}
+                      />
+                    ) : (
+                      <EmptyState
+                        icon={<Cpu size={22} />}
+                        title="Aún no hay sensores"
+                        hint="Registra tu primer sensor para empezar a recibir telemetría."
+                        action={{ label: 'Registrar un sensor', onClick: () => navigate('/infrastructure') }}
+                      />
+                    )}
                   </td>
                 </tr>
               ) : (
