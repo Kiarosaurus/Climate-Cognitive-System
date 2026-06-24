@@ -18,6 +18,7 @@ import {
   type MetricStatus,
 } from '../components/MetricCard'
 import { EmptyState } from '../components/EmptyState'
+import { getColorTemp, getColorHumedad, getColorCO2, getColorCO } from '../utils/sensorColors'
 
 const SENSOR_IDS = ['SIM-sensor-001', 'SIM-sensor-002', 'SIM-sensor-003']
 const MAX_POINTS = 40
@@ -476,10 +477,10 @@ export default function GlobalDashboard() {
                 {[...readings].reverse().slice(0, 15).map((r, i) => (
                   <tr key={i} className={`border-b border-slate-700/50 ${r.output.anomaly_detected ? 'bg-red-900/10' : ''}`}>
                     <td className="py-2 pr-4 font-mono text-slate-300">{r.output.sensor_id}</td>
-                    <td className={`py-2 pr-4 font-semibold ${r.input.temperature > 40 ? 'text-red-400' : 'text-blue-300'}`}>{fmt(r.input.temperature, '°C')}</td>
-                    <td className="py-2 pr-4 text-cyan-300">{fmt(r.input.humidity, '%')}</td>
-                    <td className="py-2 pr-4 text-green-300">{fmt(r.input.co2_ppm, '', 0)}</td>
-                    <td className={`py-2 pr-4 font-semibold ${r.input.co_ppm > 50 ? 'text-red-400' : 'text-amber-300'}`}>
+                    <td className={`py-2 pr-4 font-semibold ${getColorTemp(r.input.temperature, r.output.cognitive_action?.target ?? r.input.temperature)}`}>{fmt(r.input.temperature, '°C')}</td>
+                    <td className={`py-2 pr-4 font-semibold ${getColorHumedad(r.input.humidity)}`}>{fmt(r.input.humidity, '%')}</td>
+                    <td className={`py-2 pr-4 font-semibold ${getColorCO2(r.input.co2_ppm)}`}>{fmt(r.input.co2_ppm, '', 0)}</td>
+                    <td className={`py-2 pr-4 font-semibold ${getColorCO(r.input.co_ppm)}`}>
                       {fmt(r.input.co_ppm, ' ppm', 1)}
                     </td>
                     <td className="py-2 pr-4">

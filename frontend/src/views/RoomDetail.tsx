@@ -17,6 +17,7 @@ import {
   MetricCard, STATUS_TOKENS, tempStatus, coStatus,
 } from '../components/MetricCard'
 import { EmptyState } from '../components/EmptyState'
+import { getColorTemp, getColorHumedad, getColorCO2, getColorCO } from '../utils/sensorColors'
 
 interface RoomInfo {
   id: number
@@ -83,40 +84,6 @@ function PolicyCard({
       )}
     </button>
   )
-}
-
-// ── Readings-table cell colors ────────────────────────────────────────────────
-// Dentro de rango → gris neutro (#7a96b5); fuera de rango escala amarillo→naranja→rojo.
-const CELL_NORMAL = 'text-[#7a96b5]'
-const CELL_WARN = 'text-yellow-500'
-const CELL_HIGH = 'text-orange-500'
-const CELL_ALERT = 'text-red-500'
-
-// Temperatura: desviación absoluta respecto al target ajustado del aula.
-function tempCellColor(temp: number, target: number): string {
-  const d = Math.abs(temp - target)
-  if (d <= 1) return CELL_NORMAL
-  if (d <= 2) return CELL_WARN
-  if (d <= 3) return CELL_HIGH
-  return CELL_ALERT
-}
-function humidityCellColor(h: number): string {
-  if (h < 60) return CELL_NORMAL
-  if (h <= 70) return CELL_WARN
-  if (h <= 80) return CELL_HIGH
-  return CELL_ALERT
-}
-function co2CellColor(c: number): string {
-  if (c < 800) return CELL_NORMAL
-  if (c <= 1200) return CELL_WARN
-  if (c <= 1500) return CELL_HIGH
-  return CELL_ALERT
-}
-function coCellColor(c: number): string {
-  if (c < 10) return CELL_NORMAL
-  if (c <= 30) return CELL_WARN
-  if (c <= 50) return CELL_HIGH
-  return CELL_ALERT
 }
 
 interface SensorDevice {
@@ -907,12 +874,12 @@ export default function RoomDetail() {
               {readings.slice(0, 20).map((r, i) => (
                 <tr key={i} className="border-b border-slate-700/50">
                   <td className="py-2 pr-4 font-mono text-slate-300 text-xs">{r.sensor_id}</td>
-                  <td className={`py-2 pr-4 font-semibold ${tempCellColor(r.temperature, r.cognitive_action?.target ?? targetTemp)}`}>
+                  <td className={`py-2 pr-4 font-semibold ${getColorTemp(r.temperature, r.cognitive_action?.target ?? targetTemp)}`}>
                     {fmt(r.temperature, '°C')}
                   </td>
-                  <td className={`py-2 pr-4 font-semibold ${humidityCellColor(r.humidity)}`}>{fmt(r.humidity, '%')}</td>
-                  <td className={`py-2 pr-4 font-semibold ${co2CellColor(r.co2_ppm ?? 0)}`}>{fmt(r.co2_ppm, '', 0)}</td>
-                  <td className={`py-2 pr-4 font-semibold ${coCellColor(r.co_ppm ?? 0)}`}>
+                  <td className={`py-2 pr-4 font-semibold ${getColorHumedad(r.humidity)}`}>{fmt(r.humidity, '%')}</td>
+                  <td className={`py-2 pr-4 font-semibold ${getColorCO2(r.co2_ppm ?? 0)}`}>{fmt(r.co2_ppm, '', 0)}</td>
+                  <td className={`py-2 pr-4 font-semibold ${getColorCO(r.co_ppm ?? 0)}`}>
                     {fmt(r.co_ppm, ' ppm', 1)}
                   </td>
                   <td className="py-2 pr-4">
