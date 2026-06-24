@@ -5,11 +5,18 @@ import {
 } from 'recharts'
 import {
   Thermometer, Droplets, Wind, AlertTriangle,
-  CheckCircle, RefreshCw, Send, Zap, ZapOff, Clock, FlaskConical, CloudFog,
+  CheckCircle, RefreshCw, Send, Clock, FlaskConical, CloudFog,
+  BrainCircuit, Inbox,
 } from 'lucide-react'
 import axios from 'axios'
 import api from '../api/client'
 import type { CombinedReading, ReadingInput } from '../types'
+import {
+  MetricCard, StatusLegend, STATUS_TOKENS,
+  tempStatus, humidityStatus, co2Status, coStatus,
+  type MetricStatus,
+} from '../components/MetricCard'
+import { EmptyState } from '../components/EmptyState'
 
 const SENSOR_IDS = ['SIM-sensor-001', 'SIM-sensor-002', 'SIM-sensor-003']
 const MAX_POINTS = 40
@@ -66,17 +73,22 @@ function normalizeDoc(d: RawReading): CombinedReading {
   }
 }
 
-function MetricCard({ icon, label, value, sub, color = 'text-slate-100' }: {
-  icon: React.ReactNode; label: string; value: string; sub?: string; color?: string
+// Qualitative thermal-load label from the model's °C offset.
+function loadLabel(offset?: number): { text: string; status: MetricStatus } {
+  const v = Math.abs(offset ?? 0)
+  if (v >= 1.5) return { text: 'Alta', status: 'elevated' }
+  if (v >= 0.5) return { text: 'Media', status: 'warning' }
+  return { text: 'Baja', status: 'normal' }
+}
+
+// One stat tile inside the cognitive panel grid.
+function StatTile({ label, value, valueClass = 'text-white' }: {
+  label: string; value: string; valueClass?: string
 }) {
   return (
-    <div className="bg-slate-800 rounded-xl p-4 flex items-center gap-3">
-      <div className="text-slate-400">{icon}</div>
-      <div>
-        <p className="text-xs text-slate-400 uppercase tracking-wide">{label}</p>
-        <p className={`text-2xl font-bold ${color}`}>{value}</p>
-        {sub && <p className="text-xs text-slate-500">{sub}</p>}
-      </div>
+    <div className="bg-slate-900/50 border border-slate-700/50 rounded-lg p-3">
+      <p className="text-xs text-slate-400 mb-1">{label}</p>
+      <p className={`text-lg font-bold ${valueClass}`}>{value}</p>
     </div>
   )
 }
@@ -85,35 +97,45 @@ function CognitivePanel({ reading }: { reading: CombinedReading | null }) {
   const action = reading?.output.cognitive_action
   const room = reading?.output.room_context
   const isOn = action?.ac_status === 'ON'
+  const load = loadLabel(action?.thermal_load_offset)
+  const acText = isOn ? (action?.cooling_mode ?? 'Enfriar') : 'En espera'
+
   return (
-    <div className="bg-slate-800 rounded-xl p-5 flex flex-col gap-4">
-      <h2 className="text-slate-300 text-sm font-semibold uppercase tracking-wide">Acción Cognitiva</h2>
-      <div className={`rounded-lg p-4 flex items-center gap-3 ${isOn ? 'bg-blue-900/40 border border-blue-500/40' : 'bg-slate-700/40 border border-slate-600/40'}`}>
-        {isOn ? <Zap size={28} className="text-blue-400" /> : <ZapOff size={28} className="text-slate-500" />}
-        <div>
-          <p className={`text-2xl font-bold ${isOn ? 'text-blue-300' : 'text-slate-400'}`}>{action?.ac_status ?? '—'}</p>
-          {action?.cooling_mode && <p className="text-xs text-blue-400">{action.cooling_mode}</p>}
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-2 text-sm">
-        {[
-          ['Target ajustado', fmt(action?.target, '°C')],
-          ['Carga térmica', fmt(action?.thermal_load_offset, '°C', 3)],
-          ['Modelo', action?.model ?? '—'],
-          ['Personas esp.', room?.expected_people ?? '—'],
-        ].map(([k, v]) => (
-          <div key={String(k)} className="bg-slate-700/50 rounded p-2">
-            <p className="text-slate-400 text-xs">{k}</p>
-            <p className="text-slate-100 font-semibold">{String(v)}</p>
+    <div className="bg-slate-800 border border-slate-700/60 rounded-xl p-5 flex flex-col gap-4">
+      {/* Header — icon chip, title/subtitle, model badge */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className={`w-10 h-10 rounded-full ring-1 flex items-center justify-center shrink-0 ${
+            isOn ? 'bg-blue-500/15 ring-blue-500/40 text-blue-400' : 'bg-slate-700/50 ring-slate-600/50 text-slate-400'
+          }`}>
+            <BrainCircuit size={20} />
+          </span>
+          <div>
+            <p className="text-sm font-semibold text-white leading-tight">
+              {isOn ? 'Predicción activa' : 'Acción cognitiva'}
+            </p>
+            <p className="text-xs text-slate-400">
+              {room?.room_name ?? reading?.output.sensor_id ?? 'Sin contexto'}
+            </p>
           </div>
-        ))}
-      </div>
-      {room && (
-        <div className="border-t border-slate-700 pt-3 text-xs text-slate-400 space-y-1">
-          <p className="font-semibold text-slate-300 text-sm">{room.room_name}</p>
-          <p>Capacidad: {room.max_capacity} · Target: {room.target_temp}°C</p>
         </div>
-      )}
+        {action?.model && action.model !== 'none' && (
+          <span className="text-xs font-medium text-blue-300 bg-blue-500/10 border border-blue-500/30 px-2.5 py-1 rounded-full capitalize shrink-0">
+            {action.model}
+          </span>
+        )}
+      </div>
+
+      {/* 2×2 stat grid */}
+      <div className="grid grid-cols-2 gap-3">
+        <StatTile label="Target ajustado" value={fmt(action?.target, '°C')} valueClass="text-cyan-300" />
+        <StatTile label="Carga térmica" value={load.text} valueClass={STATUS_TOKENS[load.status].icon} />
+        <StatTile
+          label="Personas esperadas"
+          value={room ? `${room.expected_people ?? '—'} / ${room.max_capacity}` : '—'}
+        />
+        <StatTile label="Acción AC" value={acText} valueClass={isOn ? 'text-emerald-400' : 'text-slate-400'} />
+      </div>
     </div>
   )
 }
@@ -262,7 +284,7 @@ export default function GlobalDashboard() {
               : apiOnline
                 ? <span className="flex items-center gap-1 text-emerald-400">● API en línea</span>
                 : <span className="flex items-center gap-1 text-red-400">● API sin conexión</span>}
-            {latest && <span className="flex items-center gap-1 text-xs text-slate-500"><Clock size={12} />{timeLabel(latest.sentAt)}</span>}
+            <span className="flex items-center gap-1 text-xs text-slate-500 tabular-nums min-w-[52px] justify-end"><Clock size={12} />{latest ? timeLabel(latest.sentAt) : '—'}</span>
           </div>
         </div>
       </div>
@@ -280,18 +302,64 @@ export default function GlobalDashboard() {
       {error && <div className="bg-orange-900/40 border border-orange-500/50 rounded-xl px-4 py-3 text-sm text-orange-300">⚠ {error}</div>}
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <MetricCard icon={<Thermometer size={24} />} label="Temperatura" value={fmt(latest?.input.temperature, '°C')} sub={latest?.output.sensor_id} color={(latest?.input.temperature ?? 0) > 40 ? 'text-red-400' : 'text-blue-300'} />
-        <MetricCard icon={<Droplets size={24} />} label="Humedad" value={fmt(latest?.input.humidity, '%')} color={(latest?.input.humidity ?? 0) > 95 ? 'text-red-400' : 'text-cyan-300'} />
-        <MetricCard icon={<Wind size={24} />} label="CO₂" value={fmt(latest?.input.co2_ppm, ' ppm', 0)} color={(latest?.input.co2_ppm ?? 0) > 1500 ? 'text-orange-400' : 'text-green-300'} />
-        <MetricCard icon={<CloudFog size={24} />} label="CO" value={fmt(latest?.input.co_ppm, ' ppm', 1)} sub="Límite EPA: 50 ppm" color={(latest?.input.co_ppm ?? 0) > 50 ? 'text-red-400' : 'text-amber-300'} />
-        <MetricCard icon={anomalyCount > 0 ? <AlertTriangle size={24} /> : <CheckCircle size={24} />} label="Anomalías" value={String(anomalyCount)} sub={`de ${readings.length} lecturas`} color={anomalyCount > 0 ? 'text-red-400' : 'text-emerald-400'} />
+        <MetricCard
+          icon={<Thermometer size={18} />} label="Temperatura"
+          value={fmt(latest?.input.temperature, '', 1)} unit={latest ? '°C' : undefined}
+          status={tempStatus(latest?.input.temperature)}
+          statusText={latest ? STATUS_TOKENS[tempStatus(latest.input.temperature)].label : undefined}
+          sub={latest ? undefined : 'Sin datos'}
+        />
+        <MetricCard
+          icon={<Droplets size={18} />} label="Humedad"
+          value={fmt(latest?.input.humidity, '', 0)} unit={latest ? '%' : undefined}
+          status={humidityStatus(latest?.input.humidity)}
+          statusText={latest ? STATUS_TOKENS[humidityStatus(latest.input.humidity)].label : undefined}
+          sub={latest ? undefined : 'Sin datos'}
+        />
+        <MetricCard
+          icon={<Wind size={18} />} label="CO₂"
+          value={fmt(latest?.input.co2_ppm, '', 0)} unit={latest ? 'ppm' : undefined}
+          status={co2Status(latest?.input.co2_ppm)}
+          statusText={latest ? STATUS_TOKENS[co2Status(latest.input.co2_ppm)].label : undefined}
+          sub={latest ? undefined : 'Sin datos'}
+        />
+        <MetricCard
+          icon={<CloudFog size={18} />} label="CO"
+          value={fmt(latest?.input.co_ppm, '', 1)} unit={latest ? 'ppm' : undefined}
+          status={coStatus(latest?.input.co_ppm)}
+          statusText={latest ? STATUS_TOKENS[coStatus(latest.input.co_ppm)].label : undefined}
+          sub={latest ? 'Límite EPA: 50 ppm' : 'Sin datos'}
+        />
+        <MetricCard
+          icon={anomalyCount > 0 ? <AlertTriangle size={18} /> : <CheckCircle size={18} />} label="Anomalías"
+          value={String(anomalyCount)}
+          status={anomalyCount > 0 ? 'alert' : 'normal'}
+          statusIcon={null}
+          sub={`de ${readings.length} lecturas`}
+        />
+      </div>
+
+      <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl px-4 py-3">
+        <p className="text-xs text-slate-500 uppercase tracking-wide mb-2">Sistema de colores de estado</p>
+        <StatusLegend />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 bg-slate-800 rounded-xl p-5">
           <h2 className="text-slate-300 text-sm font-semibold uppercase tracking-wide mb-4">Historial (últimas {MAX_POINTS})</h2>
           {chartData.length === 0
-            ? <div className="h-64 flex items-center justify-center text-slate-500 text-sm">{mode === 'real' ? 'Sin lecturas reales registradas en el sistema' : 'Sin datos — envía una lectura de prueba'}</div>
+            ? <div className="h-64 flex items-center justify-center">
+                <EmptyState
+                  icon={<Inbox size={22} />}
+                  title={mode === 'real' ? 'Sin lecturas reales todavía' : 'Aún no hay datos'}
+                  hint={mode === 'real'
+                    ? 'Conecta un sensor o publica en POST /api/v1/sensors/ para ver el historial.'
+                    : 'Genera tu primera lectura sintética para ver el modelo cognitivo en acción.'}
+                  action={mode === 'real'
+                    ? { label: 'Probar en simulación', onClick: () => switchMode('sim') }
+                    : { label: 'Enviar lectura de prueba', onClick: handleManualSend }}
+                />
+              </div>
             : (
               <ResponsiveContainer width="100%" height={280}>
                 <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
@@ -315,7 +383,16 @@ export default function GlobalDashboard() {
       <div className="bg-slate-800 rounded-xl p-5 overflow-x-auto">
         <h2 className="text-slate-300 text-sm font-semibold uppercase tracking-wide mb-4">Lecturas Recientes</h2>
         {readings.length === 0
-          ? <p className="text-slate-500 text-sm text-center py-6">{mode === 'real' ? 'Sin lecturas reales registradas' : 'Sin lecturas — envía una de prueba'}</p>
+          ? <EmptyState
+              icon={<Inbox size={22} />}
+              title={mode === 'real' ? 'Sin lecturas reales registradas' : 'Sin lecturas todavía'}
+              hint={mode === 'real'
+                ? 'Las lecturas publicadas en la API aparecerán aquí en tiempo real.'
+                : 'Envía una lectura de prueba para poblar la tabla.'}
+              action={mode === 'real'
+                ? { label: 'Probar en simulación', onClick: () => switchMode('sim') }
+                : { label: 'Enviar lectura de prueba', onClick: handleManualSend }}
+            />
           : (
             <table className="w-full min-w-[680px] text-sm">
               <thead>

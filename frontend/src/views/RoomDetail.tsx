@@ -8,9 +8,14 @@ import { CalendarClock } from 'lucide-react'
 import {
   ArrowLeft, Building2, RefreshCw, AlertCircle,
   Zap, ZapOff, Cpu, Radio, SlidersHorizontal, WifiOff, CloudFog,
+  Thermometer, BrainCircuit, Inbox, LineChart as LineChartIcon,
 } from 'lucide-react'
 import api from '../api/client'
 import { useAuth } from '../context/AuthContext'
+import {
+  MetricCard, STATUS_TOKENS, tempStatus, coStatus,
+} from '../components/MetricCard'
+import { EmptyState } from '../components/EmptyState'
 
 interface RoomInfo {
   id: number
@@ -417,39 +422,50 @@ export default function RoomDetail() {
 
       {/* AC status + metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className={`rounded-xl p-5 flex items-center gap-4 ${isOn ? 'bg-blue-900/30 border border-blue-500/40' : 'bg-slate-800 border border-slate-700'}`}>
-          {isOn ? <Zap size={32} className="text-blue-400" /> : <ZapOff size={32} className="text-slate-500" />}
+        {/* AC status — brand-blue card, same visual DNA as the metric cards */}
+        <div className={`bg-slate-800/60 border border-slate-700/60 border-l-4 rounded-xl p-4 flex flex-col gap-3 ${isOn ? 'border-l-blue-500' : 'border-l-slate-600'}`}>
+          <span className={`w-9 h-9 rounded-lg ring-1 flex items-center justify-center ${
+            isOn ? 'bg-blue-500/10 ring-blue-500/30 text-blue-400' : 'bg-slate-700/40 ring-slate-600/40 text-slate-500'
+          }`}>
+            {isOn ? <Zap size={18} /> : <ZapOff size={18} />}
+          </span>
           <div>
-            <p className="text-xs text-slate-400 uppercase tracking-wide">AC Status</p>
-            <p className={`text-2xl font-bold ${isOn ? 'text-blue-300' : 'text-slate-400'}`}>
+            <p className="text-xs text-slate-400">AC Status</p>
+            <p className={`text-2xl font-bold leading-tight ${isOn ? 'text-blue-300' : 'text-slate-400'}`}>
               {latest?.cognitive_action?.ac_status ?? '—'}
             </p>
-            {latest?.cognitive_action?.cooling_mode && (
-              <p className="text-xs text-blue-400">{latest.cognitive_action.cooling_mode}</p>
-            )}
           </div>
-        </div>
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
-          <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Temperatura actual</p>
-          <p className={`text-2xl font-bold ${(latest?.temperature ?? 0) > 40 ? 'text-red-400' : 'text-blue-300'}`}>
-            {fmt(latest?.temperature, '°C')}
+          <p className={`text-xs font-medium ${isOn ? 'text-blue-400' : 'text-slate-500'}`}>
+            {latest?.cognitive_action?.cooling_mode ?? (isOn ? 'Enfriando' : 'En espera')}
           </p>
-          <p className="text-xs text-slate-500">Target ajustado: {fmt(latest?.cognitive_action?.target, '°C')}</p>
         </div>
-        <div className={`border rounded-xl p-5 flex items-center gap-4 ${(latest?.co_ppm ?? 0) > 50 ? 'bg-red-900/30 border-red-500/40' : 'bg-slate-800 border-slate-700'}`}>
-          <CloudFog size={32} className={(latest?.co_ppm ?? 0) > 50 ? 'text-red-400' : 'text-amber-400'} />
+
+        <MetricCard
+          icon={<Thermometer size={18} />} label="Temperatura actual"
+          value={fmt(latest?.temperature, '', 1)} unit={latest ? '°C' : undefined}
+          status={tempStatus(latest?.temperature)}
+          statusText={latest ? STATUS_TOKENS[tempStatus(latest.temperature)].label : undefined}
+          sub={latest ? `Target ajustado: ${fmt(latest.cognitive_action?.target, '°C')}` : 'Sin datos'}
+        />
+
+        <MetricCard
+          icon={<CloudFog size={18} />} label="Monóxido de CO"
+          value={fmt(latest?.co_ppm, '', 1)} unit={latest ? 'ppm' : undefined}
+          status={coStatus(latest?.co_ppm)}
+          statusText={latest ? STATUS_TOKENS[coStatus(latest.co_ppm)].label : undefined}
+          sub={latest ? 'Límite EPA: 50 ppm' : 'Sin datos'}
+        />
+
+        {/* Modelo activo — brand-purple card, same DNA */}
+        <div className="bg-slate-800/60 border border-slate-700/60 border-l-4 border-l-purple-500 rounded-xl p-4 flex flex-col gap-3">
+          <span className="w-9 h-9 rounded-lg ring-1 bg-purple-500/10 ring-purple-500/30 text-purple-400 flex items-center justify-center">
+            <BrainCircuit size={18} />
+          </span>
           <div>
-            <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Monóxido de CO</p>
-            <p className={`text-2xl font-bold ${(latest?.co_ppm ?? 0) > 50 ? 'text-red-400' : 'text-amber-300'}`}>
-              {fmt(latest?.co_ppm, ' ppm', 1)}
-            </p>
-            <p className="text-xs text-slate-500">Límite EPA: 50 ppm</p>
+            <p className="text-xs text-slate-400">Modelo activo</p>
+            <p className="text-2xl font-bold text-purple-300 capitalize leading-tight">{latest?.cognitive_action?.model ?? '—'}</p>
           </div>
-        </div>
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
-          <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Modelo activo</p>
-          <p className="text-2xl font-bold text-purple-300 capitalize">{latest?.cognitive_action?.model ?? '—'}</p>
-          <p className="text-xs text-slate-500">Sensor: {latest?.sensor_id ?? '—'}</p>
+          <p className="text-xs text-slate-500 truncate">Sensor: {latest?.sensor_id ?? '—'}</p>
         </div>
       </div>
 
@@ -525,8 +541,12 @@ export default function RoomDetail() {
           )}
         </div>
         {timelineRows.length === 0 ? (
-          <div className="h-72 flex items-center justify-center text-slate-500 text-sm">
-            Sin línea de tiempo disponible
+          <div className="h-72 flex items-center justify-center">
+            <EmptyState
+              icon={<LineChartIcon size={22} />}
+              title="Sin línea de tiempo disponible"
+              hint="La proyección de 24 h se construye a partir de lecturas y reservas. Aparecerá en cuanto el aula registre actividad."
+            />
           </div>
         ) : (
           <>
@@ -679,7 +699,12 @@ export default function RoomDetail() {
       <div className="bg-slate-800 rounded-xl p-5 overflow-x-auto">
         <h2 className="text-slate-300 text-sm font-semibold uppercase tracking-wide mb-4">Últimas lecturas</h2>
         {readings.length === 0 ? (
-          <p className="text-slate-500 text-sm text-center py-6">Sin lecturas</p>
+          <EmptyState
+            icon={<Inbox size={22} />}
+            title="Sin lecturas todavía"
+            hint="Cuando el sensor de esta aula envíe telemetría, las últimas lecturas aparecerán aquí."
+            action={{ label: 'Enviar una lectura desde el Dashboard', onClick: () => navigate('/') }}
+          />
         ) : (
           <table className="w-full min-w-[640px] text-sm">
             <thead>
