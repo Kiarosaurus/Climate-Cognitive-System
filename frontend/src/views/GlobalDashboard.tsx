@@ -135,7 +135,17 @@ function CognitivePanel({ reading }: { reading: CombinedReading | null }) {
           label="Personas esperadas"
           value={room ? `${room.expected_people ?? '—'} / ${room.max_capacity}` : '—'}
         />
-        <StatTile label="Acción AC" value={acText} valueClass={isOn ? 'text-emerald-400' : 'text-slate-400'} />
+        {/* Acción AC — badge compacto en una sola línea (no rompe en dos) */}
+        <div className="bg-slate-900/50 border border-slate-700/50 rounded-lg p-3">
+          <p className="text-xs text-slate-400 mb-1">Acción AC</p>
+          <span className={`inline-flex items-center whitespace-nowrap rounded-full px-[10px] py-[3px] text-[12px] font-semibold border ${
+            isOn
+              ? 'bg-green-500/10 border-green-500/30 text-green-500'
+              : 'bg-slate-700/40 border-slate-600/40 text-slate-400'
+          }`}>
+            {acText}
+          </span>
+        </div>
       </div>
     </div>
   )
@@ -409,13 +419,29 @@ export default function GlobalDashboard() {
                 <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                   <XAxis dataKey="time" stroke="#64748b" tick={{ fontSize: 11 }} interval="preserveStartEnd" minTickGap={32} />
-                  <YAxis stroke="#64748b" tick={{ fontSize: 11 }} />
+                  {/* Eje izquierdo → °C (temperatura + target). Tope a 42 para mostrar el límite de 40°C. */}
+                  <YAxis
+                    yAxisId="left"
+                    stroke="#64748b"
+                    tick={{ fontSize: 11 }}
+                    domain={[15, 42]}
+                    label={{ value: '°C', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 11 }}
+                  />
+                  {/* Eje derecho → % humedad relativa. */}
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    stroke="#64748b"
+                    tick={{ fontSize: 11 }}
+                    domain={[0, 100]}
+                    label={{ value: '%', angle: 90, position: 'insideRight', fill: '#64748b', fontSize: 11 }}
+                  />
                   <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#e2e8f0' }} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <ReferenceLine y={40} stroke="#ef4444" strokeDasharray="4 2" label={{ value: 'Límite', fill: '#ef4444', fontSize: 10 }} />
-                  <Line type="monotone" dataKey="temperature" name="Temperatura (°C)" stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                  <Line type="monotone" dataKey="humidity" name="Humedad (%)" stroke="#06b6d4" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                  <Line type="monotone" dataKey="target" name="Target AC (°C)" stroke="#a78bfa" strokeWidth={1.5} strokeDasharray="5 3" dot={false} />
+                  <ReferenceLine yAxisId="left" y={40} stroke="#ef4444" strokeOpacity={0.6} strokeDasharray="4 2" label={{ value: 'Límite temp (40°C)', fill: '#ef4444', fontSize: 10 }} />
+                  <Line yAxisId="left" type="monotone" dataKey="temperature" name="Temperatura (°C)" stroke="#38bdf8" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                  <Line yAxisId="right" type="monotone" dataKey="humidity" name="Humedad (%)" stroke="#a855f7" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                  <Line yAxisId="left" type="monotone" dataKey="target" name="Target AC (°C)" stroke="#22c55e" strokeWidth={1.5} strokeDasharray="5 3" dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             )}
