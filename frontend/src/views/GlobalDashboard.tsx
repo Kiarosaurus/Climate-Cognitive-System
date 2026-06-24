@@ -13,12 +13,14 @@ import api from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import type { CombinedReading, ReadingInput } from '../types'
 import {
-  MetricCard, StatusLegend, STATUS_TOKENS,
-  tempStatus, humidityStatus, co2Status, coStatus,
-  type MetricStatus,
+  MetricCard, StatusLegend, STATUS_TOKENS, type MetricStatus,
 } from '../components/MetricCard'
 import { EmptyState } from '../components/EmptyState'
-import { getColorTemp, getColorHumedad, getColorCO2, getColorCO } from '../utils/sensorColors'
+import {
+  getColorTemp, getColorHumedad, getColorCO2, getColorCO,
+  levelTemp, levelHumedad, levelCO2, levelCO,
+  sensorTokens, getStatusLabel, type SensorLevel,
+} from '../utils/sensorColors'
 
 const SENSOR_IDS = ['SIM-sensor-001', 'SIM-sensor-002', 'SIM-sensor-003']
 const MAX_POINTS = 40
@@ -81,6 +83,16 @@ function loadLabel(offset?: number): { text: string; status: MetricStatus } {
   if (v >= 1.5) return { text: 'Alta', status: 'elevated' }
   if (v >= 0.5) return { text: 'Media', status: 'warning' }
   return { text: 'Baja', status: 'normal' }
+}
+
+// Map a shared threshold level → MetricCard status (drives default glyph) and →
+// the exact card accent tokens (border / icon chip / text) from the shared palette.
+const LEVEL_TO_STATUS: Record<SensorLevel, MetricStatus> = {
+  normal: 'normal', atencion: 'warning', elevado: 'elevated', alerta: 'alert',
+}
+function levelTone(level: SensorLevel) {
+  const tk = sensorTokens(level)
+  return { bar: tk.bar, ring: tk.ring, icon: tk.text }
 }
 
 // One stat tile inside the cognitive panel grid.
@@ -278,6 +290,14 @@ export default function GlobalDashboard() {
     target: r.output.cognitive_action?.target ?? null,
   }))
 
+  // Threshold levels for the metric cards (shared palette). Temp compared vs the
+  // adjusted target; without one, fall back to the reading itself → diff 0 → normal.
+  const tempTarget = latest?.output.cognitive_action?.target ?? latest?.input.temperature ?? 0
+  const tempLvl = latest ? levelTemp(latest.input.temperature, tempTarget) : null
+  const humLvl  = latest ? levelHumedad(latest.input.humidity) : null
+  const co2Lvl  = latest ? levelCO2(latest.input.co2_ppm) : null
+  const coLvl   = latest ? levelCO(latest.input.co_ppm) : null
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -360,29 +380,33 @@ export default function GlobalDashboard() {
         <MetricCard
           icon={<Thermometer size={18} />} label="Temperatura"
           value={fmt(latest?.input.temperature, '', 1)} unit={latest ? '°C' : undefined}
-          status={tempStatus(latest?.input.temperature)}
-          statusText={latest ? STATUS_TOKENS[tempStatus(latest.input.temperature)].label : undefined}
+          status={tempLvl ? LEVEL_TO_STATUS[tempLvl] : 'normal'}
+          tone={tempLvl ? levelTone(tempLvl) : undefined}
+          statusText={tempLvl ? getStatusLabel(tempLvl) : undefined}
           sub={latest ? undefined : 'Sin datos'}
         />
         <MetricCard
           icon={<Droplets size={18} />} label="Humedad"
           value={fmt(latest?.input.humidity, '', 0)} unit={latest ? '%' : undefined}
-          status={humidityStatus(latest?.input.humidity)}
-          statusText={latest ? STATUS_TOKENS[humidityStatus(latest.input.humidity)].label : undefined}
+          status={humLvl ? LEVEL_TO_STATUS[humLvl] : 'normal'}
+          tone={humLvl ? levelTone(humLvl) : undefined}
+          statusText={humLvl ? getStatusLabel(humLvl) : undefined}
           sub={latest ? undefined : 'Sin datos'}
         />
         <MetricCard
           icon={<Wind size={18} />} label="CO₂"
           value={fmt(latest?.input.co2_ppm, '', 0)} unit={latest ? 'ppm' : undefined}
-          status={co2Status(latest?.input.co2_ppm)}
-          statusText={latest ? STATUS_TOKENS[co2Status(latest.input.co2_ppm)].label : undefined}
+          status={co2Lvl ? LEVEL_TO_STATUS[co2Lvl] : 'normal'}
+          tone={co2Lvl ? levelTone(co2Lvl) : undefined}
+          statusText={co2Lvl ? getStatusLabel(co2Lvl) : undefined}
           sub={latest ? undefined : 'Sin datos'}
         />
         <MetricCard
           icon={<CloudFog size={18} />} label="CO"
           value={fmt(latest?.input.co_ppm, '', 1)} unit={latest ? 'ppm' : undefined}
-          status={coStatus(latest?.input.co_ppm)}
-          statusText={latest ? STATUS_TOKENS[coStatus(latest.input.co_ppm)].label : undefined}
+          status={coLvl ? LEVEL_TO_STATUS[coLvl] : 'normal'}
+          tone={coLvl ? levelTone(coLvl) : undefined}
+          statusText={coLvl ? getStatusLabel(coLvl) : undefined}
           sub={latest ? 'Límite EPA: 50 ppm' : 'Sin datos'}
         />
         <MetricCard

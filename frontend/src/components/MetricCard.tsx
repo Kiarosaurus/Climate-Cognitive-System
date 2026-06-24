@@ -59,7 +59,7 @@ function defaultStatusIcon(status: MetricStatus): ReactNode {
 
 // ── Card ──────────────────────────────────────────────────────────────────────
 export function MetricCard({
-  icon, label, value, unit, status = 'normal', statusText, statusIcon, sub,
+  icon, label, value, unit, status = 'normal', statusText, statusIcon, sub, tone,
 }: {
   icon: ReactNode
   label: string
@@ -69,8 +69,9 @@ export function MetricCard({
   statusText?: string
   statusIcon?: ReactNode | null  // null → suppress glyph, undefined → default glyph
   sub?: string                   // neutral descriptor shown when no status text
+  tone?: { bar: string; ring: string; icon: string }  // override accent (border/chip/text)
 }) {
-  const t = STATUS_TOKENS[status]
+  const t = tone ? { ...STATUS_TOKENS[status], ...tone } : STATUS_TOKENS[status]
   const glyph = statusIcon === null ? null : (statusIcon ?? defaultStatusIcon(status))
   return (
     <div className={`group bg-slate-800/60 border border-slate-700/60 border-l-4 ${t.bar} rounded-xl p-4 flex flex-col gap-3 transition-colors hover:bg-slate-800`}>
