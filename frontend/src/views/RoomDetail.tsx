@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ComposedChart, Area, Line, Scatter, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, ReferenceLine,
+  Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea,
 } from 'recharts'
+import { CalendarClock } from 'lucide-react'
 import {
   ArrowLeft, Building2, RefreshCw, AlertCircle,
   Zap, ZapOff, Cpu, Radio, SlidersHorizontal, WifiOff, CloudFog,
@@ -109,6 +110,7 @@ interface TimelinePoint {
   actual_co_ppm?: number | null
   readings_count?: number
   predicted_temperature?: number | null
+  projected_temperature?: number | null
   expected_people?: number
   ac: TimelineAc
 }
@@ -120,6 +122,7 @@ interface TimelineResponse {
   generated_at: string
   window: { start: string; end: string }
   baseline_temp: number
+  baseline_source?: string
   timeline: TimelinePoint[]
 }
 
@@ -128,24 +131,43 @@ interface TimelineRow {
   hour_iso: string
   phase: 'past' | 'current' | 'future'
   temperatura_real: number | null
-  temperatura_predicha: number | null
+  temperatura_sin_ac: number | null
+  temperatura_con_ac: number | null
   ac_setpoint: number | null
-  ac_sugerido: number | null
-  reserva: number | null
+  reserva_icon: number | null
   reservation: TimelineReservation | null
   expected_people: number
   readings_count: number
+  ac_status: string | null
+  cooling_mode: string | null
+}
+
+// One contiguous reservation interval, mapped to categorical X labels for ReferenceArea.
+interface ReservationSpan {
+  reservation: TimelineReservation
+  x1: string
+  x2: string
+  isPast: boolean
 }
 
 const formatHourLabel = (iso: string) =>
   new Date(iso).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
 
+const formatClock = (iso: string) =>
+  new Date(iso).toLocaleString('es', {
+    hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit',
+  })
+
 function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: TimelineRow }> }) {
   if (!active || !payload?.length) return null
   const row = payload[0].payload
   const phaseLabel = row.phase === 'past' ? 'Pasado' : row.phase === 'current' ? 'Ahora' : 'Futuro'
+  const mitigation =
+    row.temperatura_sin_ac != null && row.temperatura_con_ac != null
+      ? row.temperatura_sin_ac - row.temperatura_con_ac
+      : null
   return (
-    <div className="bg-slate-900/95 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 shadow-xl min-w-[200px]">
+    <div className="bg-slate-900/95 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 shadow-xl min-w-[210px]">
       <div className="flex items-center justify-between mb-1.5 pb-1.5 border-b border-slate-700/70">
         <span className="text-slate-100 font-semibold">{row.time}</span>
         <span className="text-[10px] uppercase tracking-wider text-slate-400">{phaseLabel}</span>
@@ -153,23 +175,40 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<
       {row.temperatura_real != null && (
         <p>Real: <span className="text-blue-300 font-semibold">{row.temperatura_real.toFixed(2)}°C</span></p>
       )}
-      {row.temperatura_predicha != null && (
-        <p>Predicha: <span className="text-sky-300 font-semibold">{row.temperatura_predicha.toFixed(2)}°C</span></p>
-      )}
       {row.ac_setpoint != null && (
         <p>Setpoint AC: <span className="text-red-300 font-semibold">{row.ac_setpoint.toFixed(2)}°C</span></p>
       )}
-      {row.ac_sugerido != null && (
-        <p>AC sugerido: <span className="text-red-400 font-semibold">{row.ac_sugerido.toFixed(2)}°C</span></p>
+      {row.temperatura_sin_ac != null && (
+        <p>Sin AC: <span className="text-amber-300 font-semibold">{row.temperatura_sin_ac.toFixed(2)}°C</span></p>
+      )}
+      {row.temperatura_con_ac != null && (
+        <p>Con AC: <span className="text-sky-300 font-semibold">{row.temperatura_con_ac.toFixed(2)}°C</span></p>
+      )}
+      {row.phase === 'future' && row.ac_status === 'ON' && (
+        <p className="text-red-300">
+          Acción AC: <span className="font-semibold">{row.cooling_mode ?? 'ON'}</span>
+          {mitigation != null && mitigation > 0.05 && (
+            <span className="text-emerald-300"> · mitiga {mitigation.toFixed(2)}°C</span>
+          )}
+        </p>
+      )}
+      {row.phase === 'future' && row.ac_status === 'STANDBY' && (
+        <p className="text-slate-400">Acción AC: <span className="font-semibold">STANDBY</span></p>
       )}
       {row.reservation && (
-        <p className="mt-2 pt-2 border-t border-slate-700 text-emerald-300 leading-snug">
-          Reserva activa agendada por:{' '}
-          <span className="font-semibold text-emerald-200">{row.reservation.username ?? '—'}</span>{' '}
-          | Aforo esperado:{' '}
-          <span className="font-semibold text-emerald-200">{row.reservation.expected_occupancy}</span>{' '}
-          personas
-        </p>
+        <div className="mt-2 pt-2 border-t border-slate-700 text-emerald-300 leading-snug space-y-0.5">
+          <p>
+            Reserva de{' '}
+            <span className="font-semibold text-emerald-200">{row.reservation.username ?? '—'}</span>
+          </p>
+          <p className="text-emerald-200/90">
+            {formatClock(row.reservation.start_time)} → {formatClock(row.reservation.end_time)}
+          </p>
+          <p>
+            Aforo esperado:{' '}
+            <span className="font-semibold text-emerald-200">{row.reservation.expected_occupancy}</span> personas
+          </p>
+        </div>
       )}
     </div>
   )
@@ -264,8 +303,8 @@ export default function RoomDetail() {
   const latest = (readings ?? [])[0] ?? null
   const isOn = latest?.cognitive_action?.ac_status === 'ON'
 
-  // Build 24h ComposedChart rows from /timeline. Reservation Y-coord is pinned just
-  // above the visible temperature ceiling so Scatter dots sit at the chart top.
+  // Build 24h ComposedChart rows from /timeline. Past hours carry the measured (with-AC)
+  // reality; future hours carry both the sin-AC ambient and the con-AC projection.
   const timelineRows: TimelineRow[] = (timeline?.timeline ?? []).map(p => {
     const isPast = p.phase === 'past' || p.phase === 'current'
     const acOn = p.ac?.status === 'ON'
@@ -274,21 +313,52 @@ export default function RoomDetail() {
       hour_iso: p.hour,
       phase: p.phase,
       temperatura_real: isPast ? (p.actual_temperature ?? null) : null,
-      temperatura_predicha: !isPast ? (p.predicted_temperature ?? null) : null,
+      temperatura_sin_ac: !isPast ? (p.predicted_temperature ?? null) : null,
+      temperatura_con_ac: !isPast ? (p.projected_temperature ?? null) : null,
       ac_setpoint: isPast && acOn ? (p.ac.setpoint ?? null) : null,
-      ac_sugerido: !isPast ? (p.ac.suggested_setpoint ?? null) : null,
-      reserva: null,
+      reserva_icon: null,
       reservation: p.reservation,
       expected_people: p.expected_people ?? 0,
       readings_count: p.readings_count ?? 0,
+      ac_status: p.ac?.status ?? null,
+      cooling_mode: p.ac?.cooling_mode ?? null,
     }
   })
-  const tempPool = timelineRows.flatMap(r =>
-    [r.temperatura_real, r.temperatura_predicha, r.ac_setpoint, r.ac_sugerido]
-      .filter((v): v is number => v != null)
-  )
-  const reservaY = (tempPool.length ? Math.max(...tempPool) : (room?.target_temp ?? 25)) + 2
-  timelineRows.forEach(r => { if (r.reservation) r.reserva = reservaY })
+
+  // Comfort band around the configured target.
+  const TARGET_TOL = 1.0
+  const targetTemp = timeline?.target_temp ?? room?.target_temp ?? 25
+
+  const tempPool = timelineRows
+    .flatMap(r => [r.temperatura_real, r.temperatura_sin_ac, r.temperatura_con_ac, r.ac_setpoint])
+    .filter((v): v is number => v != null)
+    .concat([targetTemp - TARGET_TOL, targetTemp + TARGET_TOL])
+  const minT = tempPool.length ? Math.min(...tempPool) : targetTemp - 3
+  const maxT = tempPool.length ? Math.max(...tempPool) : targetTemp + 3
+  // Reservation icons ride a fixed row just above the temperature ceiling.
+  const reservaY = maxT + 1.5
+  const yDomain: [number, number] = [Math.floor(minT - 1), Math.ceil(reservaY + 0.5)]
+
+  // Collapse consecutive anchors sharing a reservation id into contiguous spans, and
+  // pin one icon at each span's first hour (so single-hour reservations stay visible).
+  const reservationSpans: ReservationSpan[] = []
+  const nowMs = timeline ? new Date(timeline.generated_at).getTime() : Date.now()
+  for (const row of timelineRows) {
+    const res = row.reservation
+    if (!res) continue
+    const last = reservationSpans[reservationSpans.length - 1]
+    if (last && last.reservation.id === res.id) {
+      last.x2 = row.time
+    } else {
+      row.reserva_icon = reservaY
+      reservationSpans.push({
+        reservation: res,
+        x1: row.time,
+        x2: row.time,
+        isPast: new Date(res.end_time).getTime() <= nowMs,
+      })
+    }
+  }
   const nowLabel = timelineRows.find(r => r.phase === 'current')?.time
 
   if (loading) {
@@ -467,9 +537,38 @@ export default function RoomDetail() {
                 <YAxis
                   stroke="#64748b"
                   tick={{ fontSize: 11 }}
-                  domain={['dataMin - 1', 'dataMax + 2']}
+                  domain={yDomain}
                   allowDecimals={false}
                 />
+                {/* Comfort band around the configured target (drawn first → behind series) */}
+                <ReferenceArea
+                  y1={targetTemp - TARGET_TOL}
+                  y2={targetTemp + TARGET_TOL}
+                  fill="#10b981"
+                  fillOpacity={0.06}
+                  stroke="none"
+                  ifOverflow="extendDomain"
+                />
+                <ReferenceLine
+                  y={targetTemp}
+                  stroke="#10b981"
+                  strokeDasharray="2 4"
+                  strokeOpacity={0.55}
+                  label={{ value: `Target ${targetTemp}°C`, fill: '#34d399', position: 'insideTopRight', fontSize: 10 }}
+                />
+                {/* Reservation interval bands — emerald (esperada) / gris (cumplida) */}
+                {reservationSpans.map((s, i) => (
+                  <ReferenceArea
+                    key={`res-${s.reservation.id}-${i}`}
+                    x1={s.x1}
+                    x2={s.x2}
+                    fill={s.isPast ? '#64748b' : '#10b981'}
+                    fillOpacity={s.isPast ? 0.07 : 0.12}
+                    stroke={s.isPast ? '#64748b' : '#10b981'}
+                    strokeOpacity={0.4}
+                    strokeDasharray="3 3"
+                  />
+                ))}
                 <Tooltip
                   content={<CustomTooltip />}
                   cursor={{ stroke: '#475569', strokeDasharray: '2 2' }}
@@ -503,35 +602,41 @@ export default function RoomDetail() {
                   connectNulls={false}
                   isAnimationActive={false}
                 />
-                {/* Future — predicted temperature area (azul brillante) + AC sugerido (rojo sólido) */}
+                {/* Future — sin-AC ambient (ámbar, lo que pasaría sin enfriar) vs
+                    con-AC projection (azul, temperatura mitigada hacia el target) */}
                 <Area
                   type="monotone"
-                  dataKey="temperatura_predicha"
+                  dataKey="temperatura_sin_ac"
+                  stroke="#f59e0b"
+                  fill="#f59e0b"
+                  fillOpacity={0.18}
+                  strokeWidth={2}
+                  strokeDasharray="4 3"
+                  connectNulls={false}
+                  isAnimationActive={false}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="temperatura_con_ac"
                   stroke="#60a5fa"
                   fill="#60a5fa"
-                  fillOpacity={0.4}
+                  fillOpacity={0.35}
                   strokeWidth={2}
                   connectNulls={false}
                   isAnimationActive={false}
                 />
-                <Line
-                  type="monotone"
-                  dataKey="ac_sugerido"
-                  stroke="#f87171"
-                  strokeWidth={2}
-                  dot={false}
-                  connectNulls={false}
-                  isAnimationActive={false}
-                />
-                {/* Reservation markers — fixed Y above max temp so they crown the chart */}
+                {/* Reservation icon — calendar marker pinned above each span's first hour */}
                 <Scatter
-                  dataKey="reserva"
-                  fill="#10b981"
-                  shape={(props: { cx?: number; cy?: number }) =>
-                    props.cx != null && props.cy != null
-                      ? <circle cx={props.cx} cy={props.cy} r={6} fill="#10b981" stroke="#022c22" strokeWidth={1} />
-                      : <g />
-                  }
+                  dataKey="reserva_icon"
+                  shape={(props: { cx?: number; cy?: number }) => {
+                    if (props.cx == null || props.cy == null) return <g />
+                    return (
+                      <g>
+                        <circle cx={props.cx} cy={props.cy} r={9} fill="#022c22" stroke="#10b981" strokeWidth={1.5} />
+                        <CalendarClock x={props.cx - 6} y={props.cy - 6} width={12} height={12} color="#34d399" />
+                      </g>
+                    )
+                  }}
                 />
               </ComposedChart>
             </ResponsiveContainer>
@@ -542,20 +647,24 @@ export default function RoomDetail() {
                 <span>Temperatura real</span>
               </span>
               <span className="flex items-center gap-2">
-                <span className="inline-block w-4 h-2 rounded-sm bg-sky-400/50 border border-sky-400" />
-                <span>Temperatura predicha</span>
+                <span className="inline-block w-4 h-2 rounded-sm bg-amber-500/20 border border-dashed border-amber-500" />
+                <span>Temperatura sin AC (esperada)</span>
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="inline-block w-4 h-2 rounded-sm bg-sky-400/40 border border-sky-400" />
+                <span>Temperatura con AC (proyectada)</span>
               </span>
               <span className="flex items-center gap-2">
                 <span className="inline-block w-5 border-t border-dashed border-red-500" />
                 <span>Setpoint AC (pasado)</span>
               </span>
               <span className="flex items-center gap-2">
-                <span className="inline-block w-5 border-t-2 border-red-400" />
-                <span>AC sugerido (futuro)</span>
+                <span className="inline-block w-4 h-2 rounded-sm bg-emerald-500/10 border border-emerald-500/60" />
+                <span>Banda Target ±{TARGET_TOL}°C</span>
               </span>
               <span className="flex items-center gap-2">
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 border border-emerald-900" />
-                <span>Reserva activa</span>
+                <CalendarClock size={13} className="text-emerald-400" />
+                <span>Reserva (intervalo · esperada/cumplida)</span>
               </span>
               <span className="flex items-center gap-2 text-yellow-500/90">
                 <span className="inline-block w-5 border-t border-dashed border-yellow-500" />
@@ -572,7 +681,7 @@ export default function RoomDetail() {
         {readings.length === 0 ? (
           <p className="text-slate-500 text-sm text-center py-6">Sin lecturas</p>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="text-slate-400 text-xs uppercase border-b border-slate-700">
                 {['Sensor', 'Temp', 'Humedad', 'CO₂', 'CO', 'AC', 'Timestamp'].map(h => (

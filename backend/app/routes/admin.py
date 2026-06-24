@@ -700,6 +700,9 @@ def update_reservation(
 _DIURNAL_AMPLITUDE_C = 1.5
 _OCCUPANCY_TREND_BUMP_C = 0.08
 _BASELINE_LOOKBACK_HOURS = 3
+# Deployment-local UTC offset used only to phase-align the diurnal drift so its peak
+# falls in the local afternoon (~15:00) instead of 15:00 UTC. America/Lima = UTC-5.
+_LOCAL_UTC_OFFSET_HOURS = -5
 # Hardware contract: AC always boots at 20.0°C when transitioning to ON. Any OFF→ON
 # edge re-applies this factory default until the AI emits a new cognitive_action.target.
 AC_FACTORY_DEFAULT_C = 20.0
@@ -856,16 +859,30 @@ async def get_room_timeline(
             logger.error("Mongo timeline aggregation failed for room '%s': %s", room_id, exc)
             raise HTTPException(status_code=503, detail="Sensor history unavailable") from exc
 
-    # Predictive baseline: mean temp of most recent N hourly buckets
-    recent_avg_temps = [
-        past_buckets[h]["avg_temp"]
-        for h in sorted(past_buckets.keys(), reverse=True)[:_BASELINE_LOOKBACK_HOURS]
-        if past_buckets[h].get("avg_temp") is not None
+    # Predictive baseline for the *AC-free* ambient. Naively averaging recent measured
+    # temps biases the baseline downward whenever the AC was running, so the resulting
+    # "sin-AC" prediction would secretly carry the cooling effect. Prefer hours where the
+    # AC was OFF; degrade to the global mean, then to target_temp, when none are available.
+    def _bucket_temp(h: datetime) -> Optional[float]:
+        return past_buckets[h].get("avg_temp")
+
+    off_hours = [
+        h for h in past_buckets
+        if _bucket_temp(h) is not None
+        and _compute_past_ac_state(past_buckets[h].get("ac_events", []))[0] == "OFF"
     ]
-    baseline_temp = (
-        sum(recent_avg_temps) / len(recent_avg_temps)
-        if recent_avg_temps else room.target_temp
-    )
+    if off_hours:
+        recent_off = sorted(off_hours, reverse=True)[:_BASELINE_LOOKBACK_HOURS]
+        baseline_temp = sum(_bucket_temp(h) for h in recent_off) / len(recent_off)
+        baseline_source = "ac_off_hours"
+    else:
+        all_temps = [_bucket_temp(h) for h in past_buckets if _bucket_temp(h) is not None]
+        if all_temps:
+            baseline_temp = sum(all_temps) / len(all_temps)
+            baseline_source = "all_hours_mean"
+        else:
+            baseline_temp = room.target_temp
+            baseline_source = "target_fallback"
 
     timeline: list[dict] = []
     for anchor in anchors:
@@ -907,10 +924,13 @@ async def get_room_timeline(
                     "configured_setpoint": room.target_temp,
                 }
         else:
-            # Diurnal sine: peak ~15:00 UTC, trough ~03:00 UTC
-            drift = _DIURNAL_AMPLITUDE_C * math.sin((anchor.hour - 9) / 24.0 * 2 * math.pi)
+            # Diurnal sine phased on *local* time so the peak lands in the local afternoon
+            # (~15:00) and the trough at night (~03:00). anchor.hour is UTC; shift to local.
+            local_hour = (anchor.hour + _LOCAL_UTC_OFFSET_HOURS) % 24
+            drift = _DIURNAL_AMPLITUDE_C * math.sin((local_hour - 9) / 24.0 * 2 * math.pi)
             expected_people = _timeline_expected_people(schedules, anchor)
             occupancy_offset = expected_people * _OCCUPANCY_TREND_BUMP_C
+            # predicted_temp is the AC-free ambient the room would drift toward.
             predicted_temp = round(baseline_temp + drift + occupancy_offset, 2)
 
             room_context = {
@@ -923,11 +943,22 @@ async def get_room_timeline(
             }
             cog = await calculate_cooling_demand(predicted_temp, room_context, anchor)
 
+            # projected_temp is the realized temperature *with* the AC acting: held at the
+            # suggested setpoint when the system pre-cools, else equal to the ambient when
+            # STANDBY (no mitigation needed). The sin-AC vs con-AC gap is the cooling effect.
+            ac_status = cog.get("ac_status")
+            suggested = cog.get("target")
+            if ac_status == "ON" and suggested is not None:
+                projected_temp = round(float(suggested), 2)
+            else:
+                projected_temp = predicted_temp
+
             point["predicted_temperature"] = predicted_temp
+            point["projected_temperature"] = projected_temp
             point["expected_people"] = expected_people
             point["ac"] = {
-                "status": cog.get("ac_status"),
-                "suggested_setpoint": cog.get("target"),
+                "status": ac_status,
+                "suggested_setpoint": suggested,
                 "configured_setpoint": room.target_temp,
                 "cooling_mode": cog.get("cooling_mode"),
                 "model": cog.get("model"),
@@ -942,5 +973,6 @@ async def get_room_timeline(
         "generated_at": now.isoformat(),
         "window": {"start": start.isoformat(), "end": end.isoformat()},
         "baseline_temp": round(baseline_temp, 2),
+        "baseline_source": baseline_source,
         "timeline": timeline,
     }
