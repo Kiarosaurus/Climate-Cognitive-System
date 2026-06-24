@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ComposedChart, Area, Line, Scatter, XAxis, YAxis, CartesianGrid,
@@ -8,7 +8,7 @@ import { CalendarClock } from 'lucide-react'
 import {
   ArrowLeft, Building2, RefreshCw, AlertCircle,
   Zap, ZapOff, Cpu, Radio, SlidersHorizontal, WifiOff, CloudFog,
-  Thermometer, BrainCircuit, Inbox, LineChart as LineChartIcon,
+  Thermometer, BrainCircuit, Inbox, LineChart as LineChartIcon, ChevronDown,
 } from 'lucide-react'
 import api from '../api/client'
 import { useAuth } from '../context/AuthContext'
@@ -34,6 +34,71 @@ const POLICY_DESC: Record<string, string> = {
   auto: 'Usa el modelo ML si está cargado; si no, la fórmula heurística.',
   heuristic: 'Fuerza la fórmula heurística (personas × carga) aunque haya modelo ML.',
   manual: 'Sin predicción: mantiene el aula en su target configurado.',
+}
+
+// Per-room engine selector. Custom dropdown styled after the /reservations selects
+// (slate-900 surface, violet focus, popover option list) instead of a native <select>.
+const POLICY_OPTIONS: { value: string; label: string; hint: string }[] = [
+  { value: 'auto', label: 'Automática', hint: 'ML si disponible' },
+  { value: 'heuristic', label: 'Heurística', hint: 'forzar fórmula' },
+  { value: 'manual', label: 'Manual', hint: 'mantener target' },
+]
+
+function PolicyDropdown({
+  value, onChange, disabled,
+}: {
+  value: string
+  onChange: (val: string) => void
+  disabled?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const current = POLICY_OPTIONS.find(o => o.value === value)
+
+  // Close on click outside.
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [])
+
+  return (
+    <div ref={ref} className="relative w-full">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-2 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-slate-100 hover:border-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <span className="flex items-center gap-2">
+          <BrainCircuit size={14} className="text-violet-400" />
+          {current?.label ?? value}
+        </span>
+        <ChevronDown size={15} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <ul className="absolute z-20 left-0 right-0 mt-1 bg-slate-900 border border-slate-600 rounded-lg shadow-2xl overflow-hidden">
+          {POLICY_OPTIONS.map(opt => (
+            <li
+              key={opt.value}
+              onClick={() => { onChange(opt.value); setOpen(false) }}
+              className={`px-3 py-2.5 text-sm cursor-pointer border-b border-slate-700/50 last:border-0 text-left transition-colors ${
+                opt.value === value
+                  ? 'bg-violet-600/20 text-violet-200'
+                  : 'text-slate-200 hover:bg-slate-800'
+              }`}
+            >
+              <span className="font-medium">{opt.label}</span>
+              <span className="ml-1.5 text-xs text-slate-500">· {opt.hint}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 }
 
 interface SensorDevice {
@@ -500,32 +565,25 @@ export default function RoomDetail() {
       </div>
 
       {/* Cognitive policy card — per-room engine selection */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 className="flex items-center gap-2 text-slate-300 text-sm font-semibold uppercase tracking-wide">
-            <BrainCircuit size={15} className="text-violet-400" /> Política cognitiva
-          </h2>
-          {isGuest ? (
-            <span className="text-xs font-medium text-violet-300 bg-violet-500/10 border border-violet-500/30 px-2.5 py-1 rounded-full">
-              {POLICY_LABELS[policy] ?? policy}
-            </span>
-          ) : (
-            <div className="flex items-center gap-2">
-              {policySaving && <RefreshCw size={13} className="animate-spin text-slate-400" />}
-              <select
-                value={policy}
-                disabled={policySaving}
-                onChange={e => handlePolicyChange(e.target.value)}
-                className="bg-slate-700/70 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-violet-500 disabled:opacity-50"
-              >
-                <option value="auto">Automática (ML si disponible)</option>
-                <option value="heuristic">Heurística (forzar fórmula)</option>
-                <option value="manual">Manual (mantener target)</option>
-              </select>
-            </div>
-          )}
-        </div>
-        <p className="text-xs text-slate-500 mt-2">{POLICY_DESC[policy]}</p>
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 flex flex-col items-center text-center gap-3">
+        <h2 className="flex items-center justify-center gap-2 text-slate-300 text-sm font-semibold uppercase tracking-wide">
+          <BrainCircuit size={15} className="text-violet-400" /> Política cognitiva
+        </h2>
+        {isGuest ? (
+          <span className="text-xs font-medium text-violet-300 bg-violet-500/10 border border-violet-500/30 px-2.5 py-1 rounded-full">
+            {POLICY_LABELS[policy] ?? policy}
+          </span>
+        ) : (
+          <div className="w-full max-w-xs">
+            <PolicyDropdown value={policy} onChange={handlePolicyChange} disabled={policySaving} />
+            {policySaving && (
+              <p className="flex items-center justify-center gap-1.5 text-xs text-slate-400 mt-1.5">
+                <RefreshCw size={11} className="animate-spin" /> Guardando…
+              </p>
+            )}
+          </div>
+        )}
+        <p className="text-xs text-slate-500 max-w-md">{POLICY_DESC[policy]}</p>
       </div>
 
       {/* Sensor management card */}
