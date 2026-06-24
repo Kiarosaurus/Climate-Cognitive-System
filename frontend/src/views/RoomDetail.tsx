@@ -22,6 +22,18 @@ interface RoomInfo {
   name: string
   max_capacity: number
   target_temp: number
+  control_policy: string   // auto | heuristic | manual
+}
+
+const POLICY_LABELS: Record<string, string> = {
+  auto: 'Automática',
+  heuristic: 'Heurística',
+  manual: 'Manual',
+}
+const POLICY_DESC: Record<string, string> = {
+  auto: 'Usa el modelo ML si está cargado; si no, la fórmula heurística.',
+  heuristic: 'Fuerza la fórmula heurística (personas × carga) aunque haya modelo ML.',
+  manual: 'Sin predicción: mantiene el aula en su target configurado.',
 }
 
 interface SensorDevice {
@@ -232,6 +244,7 @@ export default function RoomDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [controlError, setControlError] = useState<string | null>(null)
+  const [policySaving, setPolicySaving] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -303,7 +316,24 @@ export default function RoomDetail() {
     }
   }
 
+  async function handlePolicyChange(value: string) {
+    setControlError(null)
+    const prev = room?.control_policy
+    setRoom(r => (r ? { ...r, control_policy: value } : r))   // optimistic
+    setPolicySaving(true)
+    try {
+      await api.put(`/admin/rooms/${id}/policy`, { control_policy: value })
+    } catch (err: unknown) {
+      setRoom(r => (r ? { ...r, control_policy: prev ?? 'auto' } : r))   // revert
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setControlError(detail ?? 'No se pudo cambiar la política de control.')
+    } finally {
+      setPolicySaving(false)
+    }
+  }
+
   const hasSensors = devices.length > 0 || readings.length > 0
+  const policy = room?.control_policy ?? 'auto'
 
   const latest = (readings ?? [])[0] ?? null
   const isOn = latest?.cognitive_action?.ac_status === 'ON'
@@ -467,6 +497,35 @@ export default function RoomDetail() {
           </div>
           <p className="text-xs text-slate-500 truncate">Sensor: {latest?.sensor_id ?? '—'}</p>
         </div>
+      </div>
+
+      {/* Cognitive policy card — per-room engine selection */}
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h2 className="flex items-center gap-2 text-slate-300 text-sm font-semibold uppercase tracking-wide">
+            <BrainCircuit size={15} className="text-violet-400" /> Política cognitiva
+          </h2>
+          {isGuest ? (
+            <span className="text-xs font-medium text-violet-300 bg-violet-500/10 border border-violet-500/30 px-2.5 py-1 rounded-full">
+              {POLICY_LABELS[policy] ?? policy}
+            </span>
+          ) : (
+            <div className="flex items-center gap-2">
+              {policySaving && <RefreshCw size={13} className="animate-spin text-slate-400" />}
+              <select
+                value={policy}
+                disabled={policySaving}
+                onChange={e => handlePolicyChange(e.target.value)}
+                className="bg-slate-700/70 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-violet-500 disabled:opacity-50"
+              >
+                <option value="auto">Automática (ML si disponible)</option>
+                <option value="heuristic">Heurística (forzar fórmula)</option>
+                <option value="manual">Manual (mantener target)</option>
+              </select>
+            </div>
+          )}
+        </div>
+        <p className="text-xs text-slate-500 mt-2">{POLICY_DESC[policy]}</p>
       </div>
 
       {/* Sensor management card */}

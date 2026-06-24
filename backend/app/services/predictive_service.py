@@ -77,6 +77,7 @@ async def calculate_cooling_demand(
     """
     expected_people = (room_context or {}).get("expected_people") or 0
     target_temp = (room_context or {}).get("target_temp")
+    policy = (room_context or {}).get("control_policy") or "auto"
 
     if not room_context or target_temp is None:
         return {"ac_status": "STANDBY", "cooling_mode": None, "target": target_temp, "model": "none"}
@@ -85,13 +86,20 @@ async def calculate_cooling_demand(
     ts = reading_timestamp.replace(tzinfo=None) if reading_timestamp.tzinfo else reading_timestamp
     hour = ts.hour
 
-    if _model is not None:
+    # Per-room policy decides the engine:
+    #   manual    → no prediction, hold the configured target (zero offset)
+    #   heuristic → force the heuristic formula regardless of loaded ML model
+    #   auto      → ML model when loaded, else heuristic fallback
+    if policy == "manual":
+        thermal_load = 0.0
+        model_used = "manual"
+    elif policy == "heuristic" or _model is None:
+        thermal_load = expected_people * THERMAL_LOAD_PER_PERSON
+        model_used = "heuristic"
+    else:
         features = np.array([[current_temp, hour, expected_people]], dtype=float)
         thermal_load = float(max(0.0, _model.predict(features)[0]))
         model_used = "ml"
-    else:
-        thermal_load = expected_people * THERMAL_LOAD_PER_PERSON
-        model_used = "heuristic"
 
     thermal_load = round(thermal_load, 3)
     adjusted_target = round(target_temp - thermal_load, 2)

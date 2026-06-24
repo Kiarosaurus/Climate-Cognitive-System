@@ -83,6 +83,8 @@ def _run_migrations(engine, text):
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR NOT NULL DEFAULT 'active'",
         # users: ensure role column exists (it should, but guard against missing default)
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR NOT NULL DEFAULT 'guest'",
+        # rooms: per-room cognitive policy (auto | heuristic | manual)
+        "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS control_policy VARCHAR NOT NULL DEFAULT 'auto'",
         # rooms.id + related FK columns: INTEGER → VARCHAR (idempotent, runs only once)
         """
         DO $$

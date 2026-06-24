@@ -12,7 +12,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.database import get_db
 from app.database_sql import get_db_sql
-from app.models.admin import Room, Schedule, SensorDevice, Reservation, User, STATUSES
+from app.models.admin import Room, Schedule, SensorDevice, Reservation, User, STATUSES, CONTROL_POLICIES
 from app.dependencies import get_current_user
 from app.services.predictive_service import calculate_cooling_demand
 
@@ -63,6 +63,10 @@ class RoomUpdateIn(BaseModel):
     target_temp: float
 
 
+class RoomPolicyIn(BaseModel):
+    control_policy: str   # auto | heuristic | manual
+
+
 class SensorAssignIn(BaseModel):
     new_id: Optional[str] = None        # if set and differs from path param, renames the PK
     room_id: Optional[str] = None       # None / "" → detach sensor (room_id = NULL in DB)
@@ -106,7 +110,7 @@ def list_rooms(
     current_user: User = Depends(get_current_user),
 ):
     rooms = db.query(Room).order_by(Room.id).all()
-    return [{"id": r.id, "name": r.name, "max_capacity": r.max_capacity, "target_temp": r.target_temp} for r in rooms]
+    return [{"id": r.id, "name": r.name, "max_capacity": r.max_capacity, "target_temp": r.target_temp, "control_policy": r.control_policy} for r in rooms]
 
 
 @router.get("/rooms/{room_id}/impact")
@@ -154,7 +158,37 @@ def get_room(
     room = db.query(Room).filter(Room.id == room_id).first()
     if not room:
         raise HTTPException(status_code=404, detail=f"Room id='{room_id}' not found.")
-    return {"id": room.id, "name": room.name, "max_capacity": room.max_capacity, "target_temp": room.target_temp}
+    return {"id": room.id, "name": room.name, "max_capacity": room.max_capacity, "target_temp": room.target_temp, "control_policy": room.control_policy}
+
+
+@router.put("/rooms/{room_id}/policy")
+def update_room_policy(
+    room_id: str,
+    payload: RoomPolicyIn,
+    db: Session = Depends(get_db_sql),
+    current_user: User = Depends(get_current_user),
+):
+    """Set the per-room cognitive policy (auto | heuristic | manual).
+
+    Admin-only. Dedicated endpoint so changing policy never touches the heavier
+    rename/edit path in update_room.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Solo un administrador puede cambiar la política de control.")
+    if payload.control_policy not in CONTROL_POLICIES:
+        raise HTTPException(status_code=422, detail=f"control_policy inválida. Use una de: {sorted(CONTROL_POLICIES)}.")
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail=f"Room id='{room_id}' not found.")
+    try:
+        room.control_policy = payload.control_policy
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.error("DB error setting room policy: %s", exc)
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+    logger.info("Admin '%s' set room '%s' control_policy='%s'.", current_user.username, room_id, payload.control_policy)
+    return {"id": room.id, "control_policy": room.control_policy}
 
 
 @router.post("/rooms", status_code=201)

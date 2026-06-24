@@ -5,6 +5,11 @@ from app.database_sql import Base
 # Valid value sets (enforced in routes, not at DB level for portability)
 ROLES = {"admin", "collaborator", "guest"}
 STATUSES = {"pending", "active", "inactive"}
+# Per-room cognitive policy:
+#   auto      → ML model if loaded, else heuristic (default behavior)
+#   heuristic → force the heuristic formula even when an ML model is loaded
+#   manual    → no prediction; hold the room at its configured target_temp
+CONTROL_POLICIES = {"auto", "heuristic", "manual"}
 
 
 class User(Base):
@@ -26,6 +31,7 @@ class Room(Base):
     name = Column(String, unique=True, nullable=False)
     max_capacity = Column(Integer, nullable=False)
     target_temp = Column(Float, nullable=False)
+    control_policy = Column(String, nullable=False, default="auto", server_default="auto")
 
     schedules = relationship("Schedule", back_populates="room", cascade="all, delete-orphan")
     # SensorDevice and Reservation rows survive room deletion as historical audit orphans.

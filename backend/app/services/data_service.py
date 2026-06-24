@@ -57,6 +57,7 @@ def get_room_context(db_sql, sensor_id: str, reading_timestamp: datetime) -> dic
         "max_capacity": room.max_capacity,
         "target_temp": room.target_temp,
         "expected_people": schedule.expected_people if schedule else None,
+        "control_policy": getattr(room, "control_policy", "auto") or "auto",
         "device_id": device.id,
     }
 
