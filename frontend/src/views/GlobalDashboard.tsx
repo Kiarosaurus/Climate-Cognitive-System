@@ -21,9 +21,15 @@ import {
   levelTemp, levelHumedad, levelCO2, levelCO,
   sensorTokens, getStatusLabel, type SensorLevel,
 } from '../utils/sensorColors'
+import SearchableSelect from '../components/SearchableSelect'
 
 const SENSOR_IDS = ['SIM-sensor-001', 'SIM-sensor-002', 'SIM-sensor-003']
 const MAX_POINTS = 40
+
+// Shared input aesthetics — mismas casillas que la ruta /reservations.
+const INPUT_CLS = "w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 transition placeholder-slate-500"
+const NUM_INPUT_CLS = `${INPUT_CLS} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`
+const LABEL_CLS = "block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide"
 
 function fmt(n: number | null | undefined, unit = '', dec = 1) {
   return n == null ? '—' : `${n.toFixed(dec)}${unit}`
@@ -559,19 +565,17 @@ export default function GlobalDashboard() {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Sensor ID</label>
-              <select
-                value={form.sensor_id}
-                onChange={e => setForm(f => ({ ...f, sensor_id: e.target.value }))}
-                className="w-full bg-slate-700/70 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-amber-500"
-              >
-                {SENSOR_IDS.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
+            <SearchableSelect
+              options={SENSOR_IDS.map(s => ({ value: s, label: s }))}
+              value={form.sensor_id}
+              onChange={v => setForm(f => ({ ...f, sensor_id: v }))}
+              placeholder="Selecciona un sensor…"
+              label="Sensor ID"
+              icon={<Cpu size={16} />}
+            />
             {(['temperature', 'humidity', 'co2_ppm', 'co_ppm'] as const).map(field => (
               <div key={field}>
-                <label className="block text-xs text-slate-400 mb-1">
+                <label className={LABEL_CLS}>
                   {field === 'temperature' ? 'Temperatura (°C)'
                     : field === 'humidity' ? 'Humedad (%)'
                     : field === 'co2_ppm' ? 'CO₂ (ppm)'
@@ -582,7 +586,7 @@ export default function GlobalDashboard() {
                   step={field === 'co2_ppm' ? '1' : '0.1'}
                   value={form[field]}
                   onChange={e => setForm(f => ({ ...f, [field]: parseFloat(e.target.value) }))}
-                  className="w-full bg-slate-700/70 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-amber-500"
+                  className={NUM_INPUT_CLS}
                 />
               </div>
             ))}
