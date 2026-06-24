@@ -74,7 +74,7 @@ export default function FloatingChat() {
     <>
       {/* Chat window */}
       {isOpen && (
-        <div className="fixed bottom-20 right-6 z-50 w-80 sm:w-96 flex flex-col max-h-[520px] bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
+        <div className="fixed bottom-20 right-4 sm:right-6 z-50 w-[calc(100vw-2rem)] sm:w-96 flex flex-col max-h-[520px] bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
 
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 bg-slate-700/60 border-b border-slate-700 shrink-0">

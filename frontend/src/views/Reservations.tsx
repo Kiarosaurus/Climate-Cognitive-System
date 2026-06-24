@@ -285,8 +285,8 @@ export default function Reservations() {
         {items.length === 0 ? (
           <p className="text-slate-500 text-sm py-4 text-center bg-slate-800 rounded-xl border border-slate-700">Sin reservas</p>
         ) : (
-          <div className="bg-slate-800 rounded-xl overflow-hidden border border-slate-700">
-            <table className="w-full text-sm">
+          <div className="bg-slate-800 rounded-xl overflow-x-auto border border-slate-700">
+            <table className="w-full min-w-[560px] text-sm">
               <thead>
                 <tr className="text-slate-400 text-xs uppercase border-b border-slate-700 bg-slate-800/80">
                   {['Aula', 'Usuario', 'Inicio', 'Fin', 'Ocupantes'].map(h => (
@@ -518,7 +518,7 @@ export default function Reservations() {
             </div>
 
             {/* Before / After columns */}
-            <div className="p-6 grid grid-cols-2 gap-4">
+            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
 
               {/* Left — Datos Actuales */}
               <div className="bg-slate-700/40 border border-slate-600/50 rounded-xl p-4 space-y-4">

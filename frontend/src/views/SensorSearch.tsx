@@ -64,7 +64,7 @@ export default function SensorSearch() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <Cpu size={22} className="text-blue-400" />
           <div>
@@ -83,7 +83,7 @@ export default function SensorSearch() {
 
       {/* Stats row */}
       {!loading && sensors.length > 0 && (
-        <div className="flex gap-4">
+        <div className="flex flex-wrap gap-3 sm:gap-4">
           <div className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-sm">
             <span className="text-slate-400">Total </span>
             <span className="font-bold text-slate-100">{sensors.length}</span>
@@ -127,8 +127,8 @@ export default function SensorSearch() {
 
       {/* Table */}
       {!loading && !error && (
-        <div className="bg-slate-800 rounded-xl overflow-hidden border border-slate-700">
-          <table className="w-full text-sm">
+        <div className="bg-slate-800 rounded-xl overflow-x-auto border border-slate-700">
+          <table className="w-full min-w-[560px] text-sm">
             <thead>
               <tr className="text-slate-400 text-xs uppercase border-b border-slate-700 bg-slate-800/80">
                 {(

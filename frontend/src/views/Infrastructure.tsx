@@ -435,7 +435,7 @@ export default function Infrastructure() {
         </div>
       ) : (
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch h-[calc(100vh-7rem)] min-h-[calc(100vh-7rem)] max-h-[calc(100vh-7rem)]">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 lg:items-stretch lg:h-[calc(100vh-7rem)] lg:min-h-[calc(100vh-7rem)] lg:max-h-[calc(100vh-7rem)]">
 
           {/* ── Left column: Aulas ───────────────────────────────────────────── */}
           <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden flex flex-col h-full">
@@ -479,7 +479,7 @@ export default function Infrastructure() {
                         className={inputCls}
                       />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className={labelCls}>Capacidad Máxima</label>
                         <input type="number" required min={1}
@@ -550,7 +550,7 @@ export default function Infrastructure() {
                             className={inputCls}
                           />
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <label className={labelCls}>Capacidad Máxima</label>
                             <input type="number" required min={1}
@@ -775,7 +775,7 @@ export default function Infrastructure() {
               </button>
             </div>
 
-            <div className="p-6 grid grid-cols-2 gap-4">
+            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="bg-slate-700/40 border border-slate-600/50 rounded-xl p-4 space-y-4">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-slate-500 inline-block" /> Datos Actuales
@@ -967,7 +967,7 @@ export default function Infrastructure() {
               </button>
             </div>
 
-            <div className="p-6 grid grid-cols-2 gap-4">
+            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="bg-slate-700/40 border border-slate-600/50 rounded-xl p-4 space-y-4">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-slate-500 inline-block" /> Asignación Actual

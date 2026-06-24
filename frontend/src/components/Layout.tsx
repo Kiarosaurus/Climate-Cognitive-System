@@ -1,8 +1,9 @@
+import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Building2, Cpu, CalendarDays,
   Users, LogOut, Thermometer, ChevronRight, Building, TrendingUp,
-  AlertTriangle, X, ShieldAlert,
+  AlertTriangle, X, ShieldAlert, Menu,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useEmergency } from '../context/EmergencyContext'
@@ -30,6 +31,10 @@ export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
   const { realEmergencies, simulatedEmergencies, isPopupDismissed, dismissPopup, reopenPopup } = useEmergency()
+
+  // Mobile off-canvas sidebar — collapsed by default, auto-closes on route change.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  useEffect(() => { setMobileNavOpen(false) }, [location.pathname])
 
   function handleLogout() {
     logout()
@@ -191,8 +196,21 @@ export default function Layout() {
         </div>
       )}
 
-      {/* Sidebar */}
-      <aside className="w-56 shrink-0 flex flex-col bg-slate-800 border-r border-slate-700">
+      {/* Mobile backdrop — only when drawer open, below md */}
+      {mobileNavOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60 md:hidden"
+          onClick={() => setMobileNavOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Sidebar — static column on md+, off-canvas drawer below md */}
+      <aside
+        className={`fixed md:static inset-y-0 left-0 z-50 w-64 md:w-56 shrink-0 flex flex-col bg-slate-800 border-r border-slate-700 transform transition-transform duration-200 ease-out md:translate-x-0 ${
+          mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
         {/* Logo */}
         <div className="flex items-center gap-2.5 px-5 py-5 border-b border-slate-700">
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30">
@@ -202,6 +220,13 @@ export default function Layout() {
             Climate<br />
             <span className="text-blue-400">Cognitive</span>
           </span>
+          <button
+            onClick={() => setMobileNavOpen(false)}
+            className="ml-auto p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-700 transition-colors md:hidden"
+            aria-label="Cerrar menú"
+          >
+            <X size={18} />
+          </button>
         </div>
 
         {/* Nav */}
@@ -249,9 +274,15 @@ export default function Layout() {
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Topbar */}
-        <header className="h-14 shrink-0 flex items-center justify-between px-6 bg-slate-800/50 border-b border-slate-700 backdrop-blur-sm">
-          <div />
-          <div className="flex items-center gap-2 text-xs text-slate-400">
+        <header className="h-14 shrink-0 flex items-center justify-between px-4 sm:px-6 bg-slate-800/50 border-b border-slate-700 backdrop-blur-sm">
+          <button
+            onClick={() => setMobileNavOpen(true)}
+            className="p-2 -ml-2 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-700 transition-colors md:hidden"
+            aria-label="Abrir menú"
+          >
+            <Menu size={20} />
+          </button>
+          <div className="flex items-center gap-2 text-xs text-slate-400 ml-auto">
             {isAnyVisible && (
               <span className={`flex items-center gap-1.5 font-semibold animate-pulse mr-2 ${badgeColor}`}>
                 <AlertTriangle size={13} /> {badgeText}
@@ -263,7 +294,7 @@ export default function Layout() {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
           <Outlet />
         </main>
       </div>

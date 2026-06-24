@@ -77,7 +77,7 @@ export default function UserManagement() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <ShieldCheck size={22} className="text-blue-400" />
           <div>
@@ -117,7 +117,7 @@ export default function UserManagement() {
       </div>
 
       {/* Table */}
-      <div className="bg-slate-800 rounded-xl overflow-hidden border border-slate-700">
+      <div className="bg-slate-800 rounded-xl overflow-x-auto border border-slate-700">
         {loading ? (
           <div className="flex items-center gap-2 justify-center text-slate-400 text-sm py-12">
             <RefreshCw size={14} className="animate-spin" /> Cargando…
@@ -130,7 +130,7 @@ export default function UserManagement() {
             </div>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="text-slate-400 text-xs uppercase border-b border-slate-700 bg-slate-800/80">
                 <th className="text-left px-4 py-3">Usuario</th>

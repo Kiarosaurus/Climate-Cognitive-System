@@ -135,7 +135,7 @@ export default function GlobalDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold text-white">Dashboard Global</h1>
           <p className="text-sm text-slate-400">Monitoreo en tiempo real</p>
@@ -200,7 +200,7 @@ export default function GlobalDashboard() {
         {readings.length === 0
           ? <p className="text-slate-500 text-sm text-center py-6">Sin lecturas</p>
           : (
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[680px] text-sm">
               <thead>
                 <tr className="text-slate-400 text-xs uppercase border-b border-slate-700">
                   {['Sensor', 'Temp', 'Humedad', 'CO₂', 'CO', 'AC', 'Anomalía', 'Hora'].map(h => (

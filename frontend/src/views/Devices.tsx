@@ -335,7 +335,7 @@ export default function Devices() {
                     className={inputCls}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className={labelCls}>Capacidad Máxima</label>
                     <input type="number" required min={1}
@@ -399,7 +399,7 @@ export default function Devices() {
                         className={inputCls}
                       />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className={labelCls}>Capacidad Máxima</label>
                         <input type="number" required min={1}
@@ -572,7 +572,7 @@ export default function Devices() {
               </button>
             </div>
 
-            <div className="p-6 grid grid-cols-2 gap-4">
+            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Datos actuales */}
               <div className="bg-slate-700/40 border border-slate-600/50 rounded-xl p-4 space-y-4">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
@@ -639,7 +639,7 @@ export default function Devices() {
               </button>
             </div>
 
-            <div className="p-6 grid grid-cols-2 gap-4">
+            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Asignación actual */}
               <div className="bg-slate-700/40 border border-slate-600/50 rounded-xl p-4 space-y-4">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
