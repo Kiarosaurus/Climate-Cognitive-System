@@ -36,7 +36,7 @@ async def ingest_reading(
 
 @router.get("/")
 async def list_readings(
-    room_id: Optional[int] = None,
+    room_id: Optional[str] = None,
     sensor_id: Optional[str] = None,
     limit: int = Query(40, ge=1, le=200),
     db: AsyncIOMotorDatabase = Depends(get_db),
