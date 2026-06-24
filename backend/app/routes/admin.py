@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
+from app.config import LOCAL_UTC_OFFSET_HOURS
 from app.database import get_db
 from app.database_sql import get_db_sql
 from app.models.admin import Room, Schedule, SensorDevice, Reservation, User, STATUSES, CONTROL_POLICIES
@@ -751,8 +752,9 @@ _DIURNAL_AMPLITUDE_C = 1.5
 _OCCUPANCY_TREND_BUMP_C = 0.08
 _BASELINE_LOOKBACK_HOURS = 3
 # Deployment-local UTC offset used only to phase-align the diurnal drift so its peak
-# falls in the local afternoon (~15:00) instead of 15:00 UTC. America/Lima = UTC-5.
-_LOCAL_UTC_OFFSET_HOURS = -5
+# falls in the local afternoon (~15:00) instead of 15:00 UTC. Sourced from config
+# (LOCAL_UTC_OFFSET_HOURS, default -5 = America/Lima — Barranco, UTEC).
+_LOCAL_UTC_OFFSET_HOURS = LOCAL_UTC_OFFSET_HOURS
 # Hardware contract: AC always boots at 20.0°C when transitioning to ON. Any OFF→ON
 # edge re-applies this factory default until the AI emits a new cognitive_action.target.
 AC_FACTORY_DEFAULT_C = 20.0

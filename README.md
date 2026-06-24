@@ -215,6 +215,9 @@ SECRET_KEY=<random-hex>           # auto-generated in memory if omitted (tokens 
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=15
 
+# Deployment timezone — whole-hour UTC offset to phase-align the diurnal drift.
+LOCAL_UTC_OFFSET_HOURS=-5         # default America/Lima (Barranco, UTEC); no DST
+
 # IBM Watson Assistant (optional — chat returns 503 if unset)
 WATSON_API_KEY=
 WATSON_URL=
