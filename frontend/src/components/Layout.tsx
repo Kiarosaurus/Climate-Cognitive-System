@@ -105,7 +105,7 @@ export default function Layout() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-900 text-slate-100 overflow-hidden">
+    <div className="flex h-[100dvh] bg-slate-900 text-slate-100 overflow-hidden">
 
       {/* ── Session expired modal — highest priority, blocks all interaction ── */}
       {isSessionExpired && (

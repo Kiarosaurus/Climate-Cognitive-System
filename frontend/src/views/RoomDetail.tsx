@@ -533,7 +533,7 @@ export default function RoomDetail() {
             <ResponsiveContainer width="100%" height={320}>
               <ComposedChart data={timelineRows} margin={{ top: 24, right: 16, left: 0, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="time" stroke="#64748b" tick={{ fontSize: 11 }} interval={1} />
+                <XAxis dataKey="time" stroke="#64748b" tick={{ fontSize: 11 }} interval="preserveStartEnd" minTickGap={32} />
                 <YAxis
                   stroke="#64748b"
                   tick={{ fontSize: 11 }}
