@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ComposedChart, Area, Line, Scatter, XAxis, YAxis, CartesianGrid,
@@ -8,7 +8,8 @@ import { CalendarClock } from 'lucide-react'
 import {
   ArrowLeft, Building2, RefreshCw, AlertCircle,
   Zap, ZapOff, Cpu, Radio, SlidersHorizontal, WifiOff, CloudFog,
-  Thermometer, BrainCircuit, Inbox, LineChart as LineChartIcon, ChevronDown,
+  Thermometer, BrainCircuit, Brain, Snowflake, Bot, Sigma,
+  Inbox, LineChart as LineChartIcon, type LucideIcon,
 } from 'lucide-react'
 import api from '../api/client'
 import { useAuth } from '../context/AuthContext'
@@ -25,80 +26,97 @@ interface RoomInfo {
   control_policy: string   // auto | heuristic | manual
 }
 
-const POLICY_LABELS: Record<string, string> = {
-  auto: 'Automática',
-  heuristic: 'Heurística',
-  manual: 'Manual',
-}
-const POLICY_DESC: Record<string, string> = {
-  auto: 'Usa el modelo ML si está cargado; si no, la fórmula heurística.',
-  heuristic: 'Fuerza la fórmula heurística (personas × carga) aunque haya modelo ML.',
-  manual: 'Sin predicción: mantiene el aula en su target configurado.',
-}
-
-// Per-room engine selector. Custom dropdown styled after the /reservations selects
-// (slate-900 surface, violet focus, popover option list) instead of a native <select>.
-const POLICY_OPTIONS: { value: string; label: string; hint: string }[] = [
-  { value: 'auto', label: 'Automática', hint: 'ML si disponible' },
-  { value: 'heuristic', label: 'Heurística', hint: 'forzar fórmula' },
-  { value: 'manual', label: 'Manual', hint: 'mantener target' },
+// ── Cognitive-policy modes ────────────────────────────────────────────────────
+// Backend enum: control_policy = auto | heuristic | manual. Rendered as selectable
+// radio cards (icon + name + description) using the section's violet accent.
+const POLICY_CARDS: { value: string; label: string; desc: string; Icon: LucideIcon }[] = [
+  {
+    value: 'auto',
+    label: 'Automática',
+    Icon: Bot,
+    desc: 'Usa el modelo ML si está disponible y entrenado. Si no hay modelo cargado, cae automáticamente a la fórmula heurística. Recomendado para operación normal.',
+  },
+  {
+    value: 'heuristic',
+    label: 'Solo heurística',
+    Icon: Sigma,
+    desc: 'Aplica siempre la fórmula estática de temperatura objetivo basada en ocupación esperada y CO₂ medido. Más predecible y sin dependencia del modelo ML.',
+  },
+  {
+    value: 'manual',
+    label: 'Manual',
+    Icon: SlidersHorizontal,
+    desc: 'El administrador define el setpoint directamente. El sistema emite acciones sin adaptación cognitiva. Solo para mantenimiento o cuando el sistema cognitivo está en revisión.',
+  },
 ]
 
-function PolicyDropdown({
-  value, onChange, disabled,
+// Selectable mode card — same action as the previous dropdown's onChange.
+function PolicyCard({
+  card, selected, disabled, onSelect,
 }: {
-  value: string
-  onChange: (val: string) => void
+  card: { value: string; label: string; desc: string; Icon: LucideIcon }
+  selected: boolean
   disabled?: boolean
+  onSelect: (val: string) => void
 }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  const current = POLICY_OPTIONS.find(o => o.value === value)
-
-  // Close on click outside.
-  useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDocClick)
-    return () => document.removeEventListener('mousedown', onDocClick)
-  }, [])
-
+  const { Icon } = card
   return (
-    <div ref={ref} className="relative w-full">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between gap-2 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-slate-100 hover:border-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50 transition disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        <span className="flex items-center gap-2">
-          <BrainCircuit size={14} className="text-violet-400" />
-          {current?.label ?? value}
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => onSelect(card.value)}
+      className={`relative w-full text-left flex items-start gap-3 rounded-xl border p-4 transition-colors ${
+        selected
+          ? 'border-violet-500/60 bg-violet-500/5'
+          : 'border-slate-700 bg-slate-800/40 hover:bg-slate-800 hover:border-slate-600'
+      } ${disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+    >
+      <Icon size={20} className={`shrink-0 mt-0.5 ${selected ? 'text-violet-400' : 'text-slate-400'}`} />
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-slate-100">{card.label}</p>
+        <p className="text-xs text-slate-400 leading-relaxed mt-1">{card.desc}</p>
+      </div>
+      {selected && (
+        <span className="absolute top-3 right-3 inline-flex items-center text-[10px] font-medium text-violet-300 bg-violet-500/10 border border-violet-500/30 rounded-full px-2 py-0.5">
+          Activo
         </span>
-        <ChevronDown size={15} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-
-      {open && (
-        <ul className="absolute z-20 left-0 right-0 mt-1 bg-slate-900 border border-slate-600 rounded-lg shadow-2xl overflow-hidden">
-          {POLICY_OPTIONS.map(opt => (
-            <li
-              key={opt.value}
-              onClick={() => { onChange(opt.value); setOpen(false) }}
-              className={`px-3 py-2.5 text-sm cursor-pointer border-b border-slate-700/50 last:border-0 text-left transition-colors ${
-                opt.value === value
-                  ? 'bg-violet-600/20 text-violet-200'
-                  : 'text-slate-200 hover:bg-slate-800'
-              }`}
-            >
-              <span className="font-medium">{opt.label}</span>
-              <span className="ml-1.5 text-xs text-slate-500">· {opt.hint}</span>
-            </li>
-          ))}
-        </ul>
       )}
-    </div>
+    </button>
   )
+}
+
+// ── Readings-table cell colors ────────────────────────────────────────────────
+// Dentro de rango → gris neutro (#7a96b5); fuera de rango escala amarillo→naranja→rojo.
+const CELL_NORMAL = 'text-[#7a96b5]'
+const CELL_WARN = 'text-yellow-500'
+const CELL_HIGH = 'text-orange-500'
+const CELL_ALERT = 'text-red-500'
+
+// Temperatura: desviación absoluta respecto al target ajustado del aula.
+function tempCellColor(temp: number, target: number): string {
+  const d = Math.abs(temp - target)
+  if (d <= 1) return CELL_NORMAL
+  if (d <= 2) return CELL_WARN
+  if (d <= 3) return CELL_HIGH
+  return CELL_ALERT
+}
+function humidityCellColor(h: number): string {
+  if (h < 60) return CELL_NORMAL
+  if (h <= 70) return CELL_WARN
+  if (h <= 80) return CELL_HIGH
+  return CELL_ALERT
+}
+function co2CellColor(c: number): string {
+  if (c < 800) return CELL_NORMAL
+  if (c <= 1200) return CELL_WARN
+  if (c <= 1500) return CELL_HIGH
+  return CELL_ALERT
+}
+function coCellColor(c: number): string {
+  if (c < 10) return CELL_NORMAL
+  if (c <= 30) return CELL_WARN
+  if (c <= 50) return CELL_HIGH
+  return CELL_ALERT
 }
 
 interface SensorDevice {
@@ -403,6 +421,28 @@ export default function RoomDetail() {
   const latest = (readings ?? [])[0] ?? null
   const isOn = latest?.cognitive_action?.ac_status === 'ON'
 
+  // Modelo activo — distinguir fallback heurístico vs modelo ML cargado.
+  const modelName = latest?.cognitive_action?.model
+  const modelIsHeuristic = (modelName ?? '').toLowerCase() === 'heuristic'
+  const modelIsMl = !!modelName && !['heuristic', 'none', ''].includes(modelName.toLowerCase())
+  const modelContext = modelIsHeuristic
+    ? 'ML no disponible · usando fórmula'
+    : modelIsMl
+      ? `Modelo ${modelName} · cargado`
+      : `Sensor: ${latest?.sensor_id ?? '—'}`
+
+  // Línea de estado bajo las tarjetas de política cognitiva.
+  const policyStatus =
+    policy === 'manual'
+      ? `Modo manual · setpoint fijado en ${room?.target_temp ?? '—'}°C por admin`
+      : policy === 'heuristic'
+        ? 'Modo solo heurística · aplicando fórmula estática'
+        : `Modo automático activo${
+            modelName && modelName.toLowerCase() !== 'none'
+              ? ` · usando ${modelName}${modelIsHeuristic ? ' (fallback)' : ''}`
+              : ''
+          }`
+
   // Build 24h ComposedChart rows from /timeline. Past hours carry the measured (with-AC)
   // reality; future hours carry both the sin-AC ambient and the con-AC projection.
   const timelineRows: TimelineRow[] = (timeline?.timeline ?? []).map(p => {
@@ -519,20 +559,36 @@ export default function RoomDetail() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* AC status — brand-blue card, same visual DNA as the metric cards */}
         <div className={`bg-slate-800/60 border border-slate-700/60 border-l-4 rounded-xl p-4 flex flex-col gap-3 ${isOn ? 'border-l-blue-500' : 'border-l-slate-600'}`}>
-          <span className={`w-9 h-9 rounded-lg ring-1 flex items-center justify-center ${
-            isOn ? 'bg-blue-500/10 ring-blue-500/30 text-blue-400' : 'bg-slate-700/40 ring-slate-600/40 text-slate-500'
-          }`}>
-            {isOn ? <Zap size={18} /> : <ZapOff size={18} />}
-          </span>
+          <div className="flex items-start justify-between gap-2">
+            <span className={`w-9 h-9 rounded-lg ring-1 flex items-center justify-center ${
+              isOn ? 'bg-blue-500/10 ring-blue-500/30 text-blue-400' : 'bg-slate-700/40 ring-slate-600/40 text-slate-500'
+            }`}>
+              {isOn ? <Zap size={18} /> : <ZapOff size={18} />}
+            </span>
+            {/* Estado pill — verde Activo / rojo Apagado */}
+            <span className={`inline-flex items-center gap-1.5 text-[11px] rounded-full px-[9px] py-[3px] border ${
+              isOn ? 'bg-green-500/10 border-green-500/30 text-green-300' : 'bg-red-500/10 border-red-500/30 text-red-300'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isOn ? 'bg-green-500' : 'bg-red-500'}`} />
+              {isOn ? 'Activo' : 'Apagado'}
+            </span>
+          </div>
           <div>
             <p className="text-xs text-slate-400">AC Status</p>
             <p className={`text-2xl font-bold leading-tight ${isOn ? 'text-blue-300' : 'text-slate-400'}`}>
               {latest?.cognitive_action?.ac_status ?? '—'}
             </p>
           </div>
-          <p className={`text-xs font-medium ${isOn ? 'text-blue-400' : 'text-slate-500'}`}>
-            {latest?.cognitive_action?.cooling_mode ?? (isOn ? 'Enfriando' : 'En espera')}
-          </p>
+          {/* Modo de operación — pill con copo de nieve */}
+          {latest?.cognitive_action?.cooling_mode ? (
+            <span className="inline-flex items-center gap-1.5 self-start text-[11px] font-medium text-sky-400 bg-sky-400/10 border border-sky-400/30 rounded-full px-2.5 py-1">
+              <Snowflake size={12} /> {latest.cognitive_action.cooling_mode}
+            </span>
+          ) : (
+            <p className={`text-xs font-medium ${isOn ? 'text-sky-400' : 'text-slate-500'}`}>
+              {isOn ? 'Enfriando' : 'En espera'}
+            </p>
+          )}
         </div>
 
         <MetricCard
@@ -552,38 +608,52 @@ export default function RoomDetail() {
         />
 
         {/* Modelo activo — brand-purple card, same DNA */}
-        <div className="bg-slate-800/60 border border-slate-700/60 border-l-4 border-l-purple-500 rounded-xl p-4 flex flex-col gap-3">
+        <div className="relative bg-slate-800/60 border border-slate-700/60 border-l-4 border-l-purple-500 rounded-xl p-4 flex flex-col gap-3">
+          {modelIsHeuristic && (
+            <span className="absolute top-3 right-3 text-[11px] font-medium text-purple-400 bg-purple-500/10 border border-purple-500/30 rounded-[5px] px-2 py-0.5">
+              Fallback
+            </span>
+          )}
           <span className="w-9 h-9 rounded-lg ring-1 bg-purple-500/10 ring-purple-500/30 text-purple-400 flex items-center justify-center">
-            <BrainCircuit size={18} />
+            <Brain size={18} />
           </span>
           <div>
             <p className="text-xs text-slate-400">Modelo activo</p>
-            <p className="text-2xl font-bold text-purple-300 capitalize leading-tight">{latest?.cognitive_action?.model ?? '—'}</p>
+            <p className="text-2xl font-bold text-white capitalize leading-tight">{latest?.cognitive_action?.model ?? '—'}</p>
           </div>
-          <p className="text-xs text-slate-500 truncate">Sensor: {latest?.sensor_id ?? '—'}</p>
+          <p className="text-xs text-slate-500 truncate">{modelContext}</p>
         </div>
       </div>
 
-      {/* Cognitive policy card — per-room engine selection */}
-      <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 flex flex-col items-center text-center gap-3">
-        <h2 className="flex items-center justify-center gap-2 text-slate-300 text-sm font-semibold uppercase tracking-wide">
-          <BrainCircuit size={15} className="text-violet-400" /> Política cognitiva
-        </h2>
-        {isGuest ? (
-          <span className="text-xs font-medium text-violet-300 bg-violet-500/10 border border-violet-500/30 px-2.5 py-1 rounded-full">
-            {POLICY_LABELS[policy] ?? policy}
-          </span>
-        ) : (
-          <div className="w-full max-w-xs">
-            <PolicyDropdown value={policy} onChange={handlePolicyChange} disabled={policySaving} />
-            {policySaving && (
-              <p className="flex items-center justify-center gap-1.5 text-xs text-slate-400 mt-1.5">
-                <RefreshCw size={11} className="animate-spin" /> Guardando…
-              </p>
-            )}
-          </div>
-        )}
-        <p className="text-xs text-slate-500 max-w-md">{POLICY_DESC[policy]}</p>
+      {/* Cognitive policy — per-room engine selection as radio cards */}
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="flex items-center gap-2 text-slate-300 text-sm font-semibold uppercase tracking-wide">
+            <BrainCircuit size={15} className="text-violet-400" /> Política cognitiva
+          </h2>
+          {isGuest && (
+            <span className="text-xs text-amber-400 bg-amber-900/30 border border-amber-500/30 px-2 py-0.5 rounded-full">
+              Solo lectura
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          {POLICY_CARDS.map(card => (
+            <PolicyCard
+              key={card.value}
+              card={card}
+              selected={policy === card.value}
+              disabled={isGuest || policySaving}
+              onSelect={handlePolicyChange}
+            />
+          ))}
+        </div>
+
+        <p className="flex items-center gap-1.5 text-[13px] text-slate-500 mt-4">
+          {policySaving && <RefreshCw size={12} className="animate-spin shrink-0" />}
+          {policyStatus}
+        </p>
       </div>
 
       {/* Sensor management card */}
@@ -681,28 +751,29 @@ export default function RoomDetail() {
                 <ReferenceArea
                   y1={targetTemp - TARGET_TOL}
                   y2={targetTemp + TARGET_TOL}
-                  fill="#10b981"
-                  fillOpacity={0.06}
-                  stroke="none"
+                  fill="#22c55e"
+                  fillOpacity={0.14}
+                  stroke="#22c55e"
+                  strokeOpacity={0.38}
                   ifOverflow="extendDomain"
                 />
                 <ReferenceLine
                   y={targetTemp}
-                  stroke="#10b981"
+                  stroke="#22c55e"
                   strokeDasharray="2 4"
                   strokeOpacity={0.55}
-                  label={{ value: `Target ${targetTemp}°C`, fill: '#34d399', position: 'insideTopRight', fontSize: 10 }}
+                  label={{ value: `Target ${targetTemp}°C`, fill: '#4ade80', position: 'insideTopRight', fontSize: 10 }}
                 />
-                {/* Reservation interval bands — emerald (esperada) / gris (cumplida) */}
+                {/* Reservation interval bands — índigo (esperada) / gris (cumplida) */}
                 {reservationSpans.map((s, i) => (
                   <ReferenceArea
                     key={`res-${s.reservation.id}-${i}`}
                     x1={s.x1}
                     x2={s.x2}
-                    fill={s.isPast ? '#64748b' : '#10b981'}
-                    fillOpacity={s.isPast ? 0.07 : 0.12}
-                    stroke={s.isPast ? '#64748b' : '#10b981'}
-                    strokeOpacity={0.4}
+                    fill={s.isPast ? '#64748b' : '#6366f1'}
+                    fillOpacity={s.isPast ? 0.07 : 0.14}
+                    stroke={s.isPast ? '#64748b' : '#6366f1'}
+                    strokeOpacity={s.isPast ? 0.3 : 0.38}
                     strokeDasharray="3 3"
                   />
                 ))}
@@ -718,12 +789,12 @@ export default function RoomDetail() {
                     label={{ value: 'AHORA', fill: '#eab308', position: 'top', fontSize: 11 }}
                   />
                 )}
-                {/* Past — real temperature area (azul opaco) + AC setpoint (rojo intermitente) */}
+                {/* Past — real temperature area (celeste) + AC setpoint (rojo intermitente) */}
                 <Area
                   type="monotone"
                   dataKey="temperatura_real"
-                  stroke="#3b82f6"
-                  fill="#3b82f6"
+                  stroke="#38bdf8"
+                  fill="#38bdf8"
                   fillOpacity={0.15}
                   strokeWidth={2}
                   connectNulls={false}
@@ -744,8 +815,8 @@ export default function RoomDetail() {
                 <Area
                   type="monotone"
                   dataKey="temperatura_sin_ac"
-                  stroke="#f59e0b"
-                  fill="#f59e0b"
+                  stroke="#f97316"
+                  fill="#f97316"
                   fillOpacity={0.18}
                   strokeWidth={2}
                   strokeDasharray="4 3"
@@ -755,9 +826,10 @@ export default function RoomDetail() {
                 <Area
                   type="monotone"
                   dataKey="temperatura_con_ac"
-                  stroke="#60a5fa"
-                  fill="#60a5fa"
-                  fillOpacity={0.35}
+                  stroke="#38bdf8"
+                  strokeOpacity={0.45}
+                  fill="#38bdf8"
+                  fillOpacity={0.18}
                   strokeWidth={2}
                   connectNulls={false}
                   isAnimationActive={false}
@@ -769,8 +841,8 @@ export default function RoomDetail() {
                     if (props.cx == null || props.cy == null) return <g />
                     return (
                       <g>
-                        <circle cx={props.cx} cy={props.cy} r={9} fill="#022c22" stroke="#10b981" strokeWidth={1.5} />
-                        <CalendarClock x={props.cx - 6} y={props.cy - 6} width={12} height={12} color="#34d399" />
+                        <circle cx={props.cx} cy={props.cy} r={9} fill="#1e1b4b" stroke="#6366f1" strokeWidth={1.5} />
+                        <CalendarClock x={props.cx - 6} y={props.cy - 6} width={12} height={12} color="#818cf8" />
                       </g>
                     )
                   }}
@@ -780,11 +852,11 @@ export default function RoomDetail() {
             {/* Minimalist Tailwind legend — gris y negro */}
             <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-400 border-t border-slate-700 pt-3">
               <span className="flex items-center gap-2">
-                <span className="inline-block w-4 h-2 rounded-sm bg-blue-500/20 border border-blue-500" />
+                <span className="inline-block w-4 h-2 rounded-sm bg-sky-400/20 border border-sky-400" />
                 <span>Temperatura real</span>
               </span>
               <span className="flex items-center gap-2">
-                <span className="inline-block w-4 h-2 rounded-sm bg-amber-500/20 border border-dashed border-amber-500" />
+                <span className="inline-block w-4 h-2 rounded-sm bg-orange-500/20 border border-dashed border-orange-500" />
                 <span>Temperatura sin AC (esperada)</span>
               </span>
               <span className="flex items-center gap-2">
@@ -796,11 +868,11 @@ export default function RoomDetail() {
                 <span>Setpoint AC (pasado)</span>
               </span>
               <span className="flex items-center gap-2">
-                <span className="inline-block w-4 h-2 rounded-sm bg-emerald-500/10 border border-emerald-500/60" />
+                <span className="inline-block w-4 h-2 rounded-sm bg-green-500/20 border border-green-500/60" />
                 <span>Banda Target ±{TARGET_TOL}°C</span>
               </span>
               <span className="flex items-center gap-2">
-                <CalendarClock size={13} className="text-emerald-400" />
+                <CalendarClock size={13} className="text-indigo-400" />
                 <span>Reserva (intervalo · esperada/cumplida)</span>
               </span>
               <span className="flex items-center gap-2 text-yellow-500/90">
@@ -835,12 +907,12 @@ export default function RoomDetail() {
               {readings.slice(0, 20).map((r, i) => (
                 <tr key={i} className="border-b border-slate-700/50">
                   <td className="py-2 pr-4 font-mono text-slate-300 text-xs">{r.sensor_id}</td>
-                  <td className={`py-2 pr-4 font-semibold ${r.temperature > 40 ? 'text-red-400' : 'text-blue-300'}`}>
+                  <td className={`py-2 pr-4 font-semibold ${tempCellColor(r.temperature, r.cognitive_action?.target ?? targetTemp)}`}>
                     {fmt(r.temperature, '°C')}
                   </td>
-                  <td className="py-2 pr-4 text-cyan-300">{fmt(r.humidity, '%')}</td>
-                  <td className="py-2 pr-4 text-green-300">{fmt(r.co2_ppm, '', 0)}</td>
-                  <td className={`py-2 pr-4 font-semibold ${(r.co_ppm ?? 0) > 50 ? 'text-red-400' : 'text-amber-300'}`}>
+                  <td className={`py-2 pr-4 font-semibold ${humidityCellColor(r.humidity)}`}>{fmt(r.humidity, '%')}</td>
+                  <td className={`py-2 pr-4 font-semibold ${co2CellColor(r.co2_ppm ?? 0)}`}>{fmt(r.co2_ppm, '', 0)}</td>
+                  <td className={`py-2 pr-4 font-semibold ${coCellColor(r.co_ppm ?? 0)}`}>
                     {fmt(r.co_ppm, ' ppm', 1)}
                   </td>
                   <td className="py-2 pr-4">
