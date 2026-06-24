@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { LogIn, Thermometer, AlertCircle, RefreshCw } from 'lucide-react'
+import { LogIn, AlertCircle, RefreshCw } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import Logo from './Logo'
 
 export default function Login() {
   const { login } = useAuth()
@@ -33,8 +34,8 @@ export default function Login() {
       <div className="w-full max-w-sm">
         {/* Logo / Title */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600/20 border border-blue-500/30 mb-4">
-            <Thermometer size={32} className="text-blue-400" />
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600/15 border border-blue-500/30 mb-4">
+            <Logo size={40} />
           </div>
           <h1 className="text-2xl font-bold text-white">Climate Cognitive</h1>
           <p className="text-slate-400 text-sm mt-1">Sistema de Monitoreo IoT</p>

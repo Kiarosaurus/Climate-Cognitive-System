@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { UserPlus, Thermometer, AlertCircle, RefreshCw, CheckCircle2 } from 'lucide-react'
+import { UserPlus, AlertCircle, RefreshCw, CheckCircle2 } from 'lucide-react'
 import axios from 'axios'
+import Logo from '../components/Logo'
 
 const ROLES = ['guest', 'collaborator', 'admin'] as const
 
@@ -67,8 +68,8 @@ export default function Register() {
     <div className="min-h-screen bg-slate-900 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600/20 border border-blue-500/30 mb-4">
-            <Thermometer size={32} className="text-blue-400" />
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600/15 border border-blue-500/30 mb-4">
+            <Logo size={40} />
           </div>
           <h1 className="text-2xl font-bold text-white">Climate Cognitive</h1>
           <p className="text-slate-400 text-sm mt-1">Crear cuenta</p>
