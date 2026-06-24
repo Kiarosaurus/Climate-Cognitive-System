@@ -18,7 +18,52 @@ function fmt(n: number | null | undefined, unit = '', dec = 1) {
   return n == null ? '—' : `${n.toFixed(dec)}${unit}`
 }
 function timeLabel(ms: number) {
-  return new Date(ms).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return new Date(ms).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
+}
+
+// ── Real-mode persistence bridge ──────────────────────────────────────────────
+// Flat Mongo reading doc as returned by GET /sensors/ (no input/output wrapper).
+interface RawReading {
+  sensor_id: string
+  temperature: number
+  humidity: number
+  co2_ppm: number | null
+  co_ppm: number | null
+  is_simulated?: boolean
+  anomaly_detected?: boolean
+  timestamp: string
+  cognitive_action?: CombinedReading['output']['cognitive_action']
+}
+
+// Stored timestamps are naive UTC ("YYYY-MM-DDTHH:MM:SS.ffffff"). Force UTC parse so the
+// browser renders them in local time consistently.
+function parseTs(ts: string): number {
+  const iso = /(Z|[+-]\d\d:?\d\d)$/.test(ts) ? ts : `${ts}Z`
+  const ms = Date.parse(iso)
+  return Number.isNaN(ms) ? Date.now() : ms
+}
+
+// Map a persisted flat doc into the same {input, output, sentAt} shape the UI renders.
+function normalizeDoc(d: RawReading): CombinedReading {
+  return {
+    input: {
+      sensor_id: d.sensor_id,
+      temperature: d.temperature,
+      humidity: d.humidity,
+      co2_ppm: d.co2_ppm ?? 0,
+      co_ppm: d.co_ppm ?? 0,
+    },
+    output: {
+      sensor_id: d.sensor_id,
+      anomaly_detected: d.anomaly_detected ?? false,
+      inserted_id: '',
+      timestamp: d.timestamp,
+      cognitive_action: d.cognitive_action ?? {
+        ac_status: 'STANDBY', cooling_mode: null, target: null, thermal_load_offset: 0, model: 'none',
+      },
+    },
+    sentAt: parseTs(d.timestamp),
+  }
 }
 
 function MetricCard({ icon, label, value, sub, color = 'text-slate-100' }: {
@@ -80,6 +125,8 @@ export default function GlobalDashboard() {
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<ReadingInput>({ sensor_id: SENSOR_IDS[0], temperature: 24.5, humidity: 55, co2_ppm: 800, co_ppm: 0 })
   const [autoMode, setAutoMode] = useState(false)
+  // 'real' = persisted sensor readings polled from Mongo; 'sim' = synthetic buffer (this tab only)
+  const [mode, setMode] = useState<'real' | 'sim'>('real')
 
   const checkHealth = useCallback(async () => {
     try { await axios.get('/health'); setApiOnline(true) }
@@ -105,11 +152,38 @@ export default function GlobalDashboard() {
     } finally { setSending(false) }
   }, [])
 
+  // Real mode: poll persisted readings, drop simulated ones, render chronologically.
   useEffect(() => {
-    if (!autoMode) return   // guard: toggle is off — do not start any interval
+    if (mode !== 'real') return
+    let cancelled = false
+    const fetchReal = async () => {
+      try {
+        const { data } = await api.get<RawReading[]>('/sensors/?limit=200')
+        if (cancelled) return
+        const norm = (data ?? [])
+          .filter(d => !d.is_simulated)
+          .map(normalizeDoc)
+          .sort((a, b) => a.sentAt - b.sentAt)
+          .slice(-MAX_POINTS)
+        setReadings(norm)
+        setError(null)
+      } catch (err: unknown) {
+        if (cancelled) return
+        const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+          ?? (err as { message?: string })?.message ?? 'Error cargando lecturas reales'
+        setError(String(msg))
+      }
+    }
+    fetchReal()
+    const t = setInterval(fetchReal, 5_000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [mode])
+
+  // Sim mode: auto-generate synthetic readings every 4s while the toggle is on.
+  useEffect(() => {
+    if (mode !== 'sim' || !autoMode) return   // guard: only runs in sim mode with auto on
 
     const interval = setInterval(() => {
-      if (!autoMode) return  // inner guard: stale-closure safety — skip if somehow off
       sendReading({
         sensor_id: SENSOR_IDS[Math.floor(Math.random() * SENSOR_IDS.length)],
         temperature: parseFloat((15 + Math.random() * 30).toFixed(1)),
@@ -121,8 +195,28 @@ export default function GlobalDashboard() {
       })
     }, 4_000)
 
-    return () => clearInterval(interval)  // fires on toggle-off AND on unmount
-  }, [autoMode, sendReading])
+    return () => clearInterval(interval)
+  }, [mode, autoMode, sendReading])
+
+  // Switch source. Never mix real and synthetic buffers — clear on every transition.
+  const switchMode = useCallback((next: 'real' | 'sim') => {
+    if (next === mode) return
+    setMode(next)
+    setReadings([])
+    if (next === 'real') setAutoMode(false)
+  }, [mode])
+
+  // Manual send forces Simulación (sending test data is inherently a sim action).
+  const handleManualSend = useCallback(() => {
+    if (mode !== 'sim') { setMode('sim'); setReadings([]) }
+    sendReading(form)
+  }, [mode, form, sendReading])
+
+  // Enabling auto-simulate also forces Simulación.
+  const toggleAuto = useCallback(() => {
+    if (!autoMode && mode !== 'sim') { setMode('sim'); setReadings([]) }
+    setAutoMode(v => !v)
+  }, [autoMode, mode])
 
   const latest = readings[readings.length - 1] ?? null
   const anomalyCount = readings.filter(r => r.output.anomaly_detected).length
@@ -140,13 +234,36 @@ export default function GlobalDashboard() {
           <h1 className="text-xl font-bold text-white">Dashboard Global</h1>
           <p className="text-sm text-slate-400">Monitoreo en tiempo real</p>
         </div>
-        <div className="flex items-center gap-2 text-sm">
-          {apiOnline === null
-            ? <span className="flex items-center gap-1 text-slate-400"><RefreshCw size={13} className="animate-spin" /> Verificando…</span>
-            : apiOnline
-              ? <span className="flex items-center gap-1 text-emerald-400">● API en línea</span>
-              : <span className="flex items-center gap-1 text-red-400">● API sin conexión</span>}
-          {latest && <span className="flex items-center gap-1 text-xs text-slate-500"><Clock size={12} />{timeLabel(latest.sentAt)}</span>}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Data source toggle: persisted real readings vs synthetic buffer */}
+          <div className="flex items-center gap-0.5 bg-slate-800 border border-slate-700 rounded-lg p-0.5">
+            <button
+              onClick={() => switchMode('real')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                mode === 'real' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-100'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${mode === 'real' ? 'bg-emerald-300 animate-pulse' : 'bg-slate-500'}`} />
+              Tiempo real
+            </button>
+            <button
+              onClick={() => switchMode('sim')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                mode === 'sim' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-slate-100'
+              }`}
+            >
+              <FlaskConical size={12} />
+              Simulación
+            </button>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            {apiOnline === null
+              ? <span className="flex items-center gap-1 text-slate-400"><RefreshCw size={13} className="animate-spin" /> Verificando…</span>
+              : apiOnline
+                ? <span className="flex items-center gap-1 text-emerald-400">● API en línea</span>
+                : <span className="flex items-center gap-1 text-red-400">● API sin conexión</span>}
+            {latest && <span className="flex items-center gap-1 text-xs text-slate-500"><Clock size={12} />{timeLabel(latest.sentAt)}</span>}
+          </div>
         </div>
       </div>
 
@@ -174,12 +291,12 @@ export default function GlobalDashboard() {
         <div className="lg:col-span-2 bg-slate-800 rounded-xl p-5">
           <h2 className="text-slate-300 text-sm font-semibold uppercase tracking-wide mb-4">Historial (últimas {MAX_POINTS})</h2>
           {chartData.length === 0
-            ? <div className="h-64 flex items-center justify-center text-slate-500 text-sm">Sin datos — envía una lectura</div>
+            ? <div className="h-64 flex items-center justify-center text-slate-500 text-sm">{mode === 'real' ? 'Sin lecturas reales registradas en el sistema' : 'Sin datos — envía una lectura de prueba'}</div>
             : (
               <ResponsiveContainer width="100%" height={280}>
                 <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="time" stroke="#64748b" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                  <XAxis dataKey="time" stroke="#64748b" tick={{ fontSize: 11 }} interval="preserveStartEnd" minTickGap={32} />
                   <YAxis stroke="#64748b" tick={{ fontSize: 11 }} />
                   <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#e2e8f0' }} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -198,7 +315,7 @@ export default function GlobalDashboard() {
       <div className="bg-slate-800 rounded-xl p-5 overflow-x-auto">
         <h2 className="text-slate-300 text-sm font-semibold uppercase tracking-wide mb-4">Lecturas Recientes</h2>
         {readings.length === 0
-          ? <p className="text-slate-500 text-sm text-center py-6">Sin lecturas</p>
+          ? <p className="text-slate-500 text-sm text-center py-6">{mode === 'real' ? 'Sin lecturas reales registradas' : 'Sin lecturas — envía una de prueba'}</p>
           : (
             <table className="w-full min-w-[680px] text-sm">
               <thead>
@@ -258,7 +375,7 @@ export default function GlobalDashboard() {
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <span className="text-xs text-slate-400">Auto-simular (4s)</span>
               <div
-                onClick={() => setAutoMode(v => !v)}
+                onClick={toggleAuto}
                 className={`w-10 h-5 rounded-full transition-colors relative ${autoMode ? 'bg-amber-600' : 'bg-slate-600'}`}
               >
                 <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${autoMode ? 'translate-x-5' : 'translate-x-0.5'}`} />
@@ -297,7 +414,7 @@ export default function GlobalDashboard() {
           </div>
 
           <button
-            onClick={() => sendReading(form)}
+            onClick={handleManualSend}
             disabled={sending || autoMode}
             className="flex items-center gap-2 bg-amber-700 hover:bg-amber-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-sm font-semibold px-5 py-2 rounded-lg transition-colors"
           >
