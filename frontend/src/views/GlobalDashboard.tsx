@@ -6,7 +6,7 @@ import {
 import {
   Thermometer, Droplets, Wind, AlertTriangle,
   CheckCircle, RefreshCw, Send, Clock, FlaskConical, CloudFog,
-  BrainCircuit, Inbox,
+  BrainCircuit, Inbox, Cpu,
 } from 'lucide-react'
 import axios from 'axios'
 import api from '../api/client'
@@ -143,6 +143,7 @@ function CognitivePanel({ reading }: { reading: CombinedReading | null }) {
 export default function GlobalDashboard() {
   const [readings, setReadings] = useState<CombinedReading[]>([])
   const [apiOnline, setApiOnline] = useState<boolean | null>(null)
+  const [engine, setEngine] = useState<'ml' | 'heuristic' | null>(null)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<ReadingInput>({ sensor_id: SENSOR_IDS[0], temperature: 24.5, humidity: 55, co2_ppm: 800, co_ppm: 0 })
@@ -151,8 +152,11 @@ export default function GlobalDashboard() {
   const [mode, setMode] = useState<'real' | 'sim'>('real')
 
   const checkHealth = useCallback(async () => {
-    try { await axios.get('/health'); setApiOnline(true) }
-    catch { setApiOnline(false) }
+    try {
+      const { data } = await axios.get<{ engine?: 'ml' | 'heuristic' }>('/health')
+      setApiOnline(true)
+      setEngine(data?.engine ?? null)
+    } catch { setApiOnline(false) }
   }, [])
 
   useEffect(() => {
@@ -279,6 +283,21 @@ export default function GlobalDashboard() {
             </button>
           </div>
           <div className="flex items-center gap-2 text-sm">
+            {engine && (
+              <span
+                title={engine === 'ml'
+                  ? 'Modelo ML cargado — predicción de carga térmica entrenada'
+                  : 'Sin modelo entrenado — fallback heurístico (personas × carga)'}
+                className={`flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border ${
+                  engine === 'ml'
+                    ? 'text-violet-300 bg-violet-500/10 border-violet-500/30'
+                    : 'text-slate-300 bg-slate-700/50 border-slate-600/60'
+                }`}
+              >
+                {engine === 'ml' ? <BrainCircuit size={12} /> : <Cpu size={12} />}
+                Motor: {engine === 'ml' ? 'ML' : 'Heurístico'}
+              </span>
+            )}
             {apiOnline === null
               ? <span className="flex items-center gap-1 text-slate-400"><RefreshCw size={13} className="animate-spin" /> Verificando…</span>
               : apiOnline

@@ -161,4 +161,5 @@ def _seed_admin(SessionLocal):
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok"}
+    from app.services.predictive_service import active_engine
+    return {"status": "ok", "engine": active_engine()}

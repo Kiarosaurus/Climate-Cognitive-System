@@ -49,6 +49,15 @@ def load_model() -> None:
         logger.error("Failed to load ML model: %s — heuristic fallback active.", exc)
 
 
+def active_engine() -> str:
+    """Return the engine currently driving cognitive actions.
+
+    'ml' when a trained model is loaded in memory, otherwise 'heuristic'. This is
+    global, startup-bound server state — independent of any single reading.
+    """
+    return "ml" if _model is not None else "heuristic"
+
+
 async def calculate_cooling_demand(
     current_temp: float, room_context: dict, reading_timestamp: datetime
 ) -> dict:
