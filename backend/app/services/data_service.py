@@ -104,7 +104,7 @@ async def process_reading(db, reading: SensorReading, db_sql=None) -> dict:
 
     if cognitive_action is None:
         cognitive_action = await calculate_cooling_demand(
-            reading.temperature, room_context, reading.timestamp
+            reading.temperature, room_context, reading.timestamp, co2_ppm=reading.co2_ppm
         )
 
     inserted_id = await save_reading(db, reading, cognitive_action=cognitive_action)

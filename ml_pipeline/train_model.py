@@ -1,9 +1,13 @@
 """
 Train a HistGradientBoostingRegressor to predict target_temp_offset.
 
-Features  : temperature, hour_of_day, expected_people
+Features  : temperature, hour_of_day, expected_occupancy, actual_occupancy
 Target    : target_temp_offset  (degrees to pre-compensate)
 Output    : backend/app/ml/model.joblib
+
+NOTE: The feature list AND ORDER below must stay identical to the vector built in
+backend/app/services/predictive_service.py (calculate_cooling_demand, ML branch):
+    [current_temp, hour, expected_occupancy, actual_occupancy]
 
 Usage (run from project root):
     python ml_pipeline/extract_data.py   # generate data first
@@ -21,8 +25,10 @@ from sklearn.metrics import mean_squared_error, r2_score
 DATA_CSV = Path(__file__).parent / "data" / "features.csv"
 MODEL_OUTPUT = Path(__file__).parent.parent / "backend" / "app" / "ml" / "model.joblib"
 
-# 2. CAMBIO: Añadir co2_ppm. Si no hay cámara, el CO2 "salvará" la predicción.
-FEATURES = ["temperature", "hour_of_day", "expected_people", "co2_ppm"] 
+# Order MUST match the ML feature vector in predictive_service.calculate_cooling_demand.
+# actual_occupancy is the CO2-derived realized headcount (feedback); expected_occupancy
+# is the reservation plan (feed-forward). Keeping both lets the model weight them.
+FEATURES = ["temperature", "hour_of_day", "expected_occupancy", "actual_occupancy"]
 TARGET = "target_temp_offset"
 
 def main():
@@ -34,7 +40,7 @@ def main():
     df = pd.read_csv(DATA_CSV)
     print(f"Loaded {len(df)} rows from {DATA_CSV}")
 
-    df['expected_people'] = df['expected_people'].replace(-1, np.nan)
+    df['expected_occupancy'] = df['expected_occupancy'].replace(-1, np.nan)
 
     X = df[FEATURES]
     y = df[TARGET]

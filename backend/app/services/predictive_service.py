@@ -1,11 +1,18 @@
 """
 Predictive service — dual-mode thermal load engine.
 
+Occupancy model (feed-forward + feedback):
+  - expected_occupancy → PLANNED headcount from Schedule/Reservation. Feed-forward
+    signal: drives anticipatory pre-cooling, the only value known before arrival.
+  - actual_occupancy   → REALIZED headcount inferred from CO2 (occupancy_service).
+    Feedback signal: trims the demand once the room actually fills (or doesn't).
+  The engine blends both into an effective_occupancy via FEEDBACK_WEIGHT.
+
 Operates in two modes:
   - ML mode: loads a scikit-learn model trained on historical sensor readings.
-    Features: [current_temp, hour_of_day, expected_occupancy].
+    Features: [current_temp, hour_of_day, expected_occupancy, actual_occupancy].
   - Heuristic mode (fallback): estimates thermal load as
-    expected_people × THERMAL_LOAD_PER_PERSON when no model.joblib is present.
+    effective_occupancy × THERMAL_LOAD_PER_PERSON when no model.joblib is present.
 
 The output drives the AC cognitive action: if the current temperature exceeds
 the occupancy-adjusted target, the system emits ac_status=ON (PRE-COOLING);
@@ -17,6 +24,8 @@ from pathlib import Path
 
 import numpy as np
 
+from app.services.occupancy_service import estimate_actual_occupancy, occupancy_gap
+
 logger = logging.getLogger(__name__)
 
 _MODEL_PATH = Path(__file__).resolve().parent.parent / "ml" / "model.joblib"
@@ -24,6 +33,12 @@ _model = None
 
 # Degrees Celsius of thermal load added per person present (heuristic bootstrap)
 THERMAL_LOAD_PER_PERSON = 0.05
+
+# Weight of the FEEDBACK (CO2-measured actual) signal vs the FEED-FORWARD
+# (reservation-planned expected) signal when both are available. 0 → trust the
+# plan only; 1 → trust the live sensor only. 0.6 leans on measured reality while
+# retaining anticipation for the ramp-up at the start of an occupancy window.
+FEEDBACK_WEIGHT = 0.6
 
 
 def load_model() -> None:
@@ -59,28 +74,48 @@ def active_engine() -> str:
 
 
 async def calculate_cooling_demand(
-    current_temp: float, room_context: dict, reading_timestamp: datetime
+    current_temp: float,
+    room_context: dict,
+    reading_timestamp: datetime,
+    co2_ppm: float | None = None,
 ) -> dict:
     """Compute the cognitive AC action for an incoming sensor reading.
 
     Args:
         current_temp: Measured temperature in °C from the sensor.
-        room_context: Dict with room metadata (target_temp, expected_people, etc.)
-                      or None/empty when the sensor has no registered room or
-                      control is disabled.
+        room_context: Dict with room metadata (target_temp, expected_people,
+                      max_capacity, etc.) or None/empty when the sensor has no
+                      registered room or control is disabled.
         reading_timestamp: UTC datetime of the reading; used to extract hour_of_day
                            as a feature for the ML model.
+        co2_ppm: Measured CO2 in ppm, used to infer actual (realized) occupancy for
+                 the feedback correction. None → feed-forward on expected only.
 
     Returns:
         Dict with keys: ac_status ('ON' | 'STANDBY'), cooling_mode, target,
-        thermal_load_offset, model ('ml' | 'heuristic' | 'none').
+        thermal_load_offset, model ('ml' | 'heuristic' | 'none'), and the
+        occupancy telemetry: expected_occupancy, actual_occupancy,
+        effective_occupancy, occupancy_gap.
     """
     expected_people = (room_context or {}).get("expected_people") or 0
     target_temp = (room_context or {}).get("target_temp")
     policy = (room_context or {}).get("control_policy") or "auto"
+    max_capacity = (room_context or {}).get("max_capacity")
 
     if not room_context or target_temp is None:
         return {"ac_status": "STANDBY", "cooling_mode": None, "target": target_temp, "model": "none"}
+
+    # Feedback signal: infer realized occupancy from CO2 (None when no CO2 channel).
+    actual_people = estimate_actual_occupancy(co2_ppm, max_capacity)
+
+    # Effective occupancy = feed-forward (plan) blended with feedback (measured).
+    # No CO2 signal → pure feed-forward on the reservation/schedule expectation.
+    if actual_people is None:
+        effective_people = float(expected_people)
+    else:
+        effective_people = (
+            (1 - FEEDBACK_WEIGHT) * expected_people + FEEDBACK_WEIGHT * actual_people
+        )
 
     # Use sensor timestamp hour, stripped of tzinfo to match naive UTC assumption
     ts = reading_timestamp.replace(tzinfo=None) if reading_timestamp.tzinfo else reading_timestamp
@@ -94,15 +129,26 @@ async def calculate_cooling_demand(
         thermal_load = 0.0
         model_used = "manual"
     elif policy == "heuristic" or _model is None:
-        thermal_load = expected_people * THERMAL_LOAD_PER_PERSON
+        thermal_load = effective_people * THERMAL_LOAD_PER_PERSON
         model_used = "heuristic"
     else:
-        features = np.array([[current_temp, hour, expected_people]], dtype=float)
+        # actual_people may be None (no CO2) — fall back to expected for that slot
+        actual_feature = actual_people if actual_people is not None else expected_people
+        features = np.array(
+            [[current_temp, hour, expected_people, actual_feature]], dtype=float
+        )
         thermal_load = float(max(0.0, _model.predict(features)[0]))
         model_used = "ml"
 
     thermal_load = round(thermal_load, 3)
     adjusted_target = round(target_temp - thermal_load, 2)
+
+    occupancy_telemetry = {
+        "expected_occupancy": expected_people,
+        "actual_occupancy": actual_people,
+        "effective_occupancy": round(effective_people, 2),
+        "occupancy_gap": occupancy_gap(expected_people, actual_people),
+    }
 
     if current_temp > adjusted_target:
         return {
@@ -111,6 +157,7 @@ async def calculate_cooling_demand(
             "target": adjusted_target,
             "thermal_load_offset": thermal_load,
             "model": model_used,
+            **occupancy_telemetry,
         }
     return {
         "ac_status": "STANDBY",
@@ -118,4 +165,5 @@ async def calculate_cooling_demand(
         "target": adjusted_target,
         "thermal_load_offset": thermal_load,
         "model": model_used,
+        **occupancy_telemetry,
     }

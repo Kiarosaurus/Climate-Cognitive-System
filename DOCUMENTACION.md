@@ -15,6 +15,7 @@
    - 3.4 [Lógica de Orfandad Histórica y Herencia Segura](#34-lógica-de-orfandad-histórica-y-herencia-segura)
    - 3.5 [Inputs Numéricos Fluidos y UI Minimalista](#35-inputs-numéricos-fluidos-y-ui-minimalista)
    - 3.6 [Fijación de Destellos en Gráficos de Rentabilidad](#36-fijación-de-destellos-en-gráficos-de-rentabilidad)
+   - 3.7 [Ocupación Esperada vs. Real (Feed-Forward + Feedback)](#37-ocupación-esperada-vs-real-feed-forward--feedback)
 4. [Hitos del Proyecto y Hoja de Ruta](#4-hitos-del-proyecto-y-hoja-de-ruta)
 5. [Arquitectura Tecnológica](#5-arquitectura-tecnológica)
 6. [Endpoints API](#6-endpoints-api)
@@ -110,7 +111,7 @@ Climate-Cognitive-System/
 | `app/core/security.py` | **Seguridad** | `hash_password` / `verify_password` con **Argon2** vía `pwdlib`, `create_access_token` / `decode_token` JWT (`python-jose`) |
 | `app/models/` | **Modelos** | `admin.py` (ORM SQLAlchemy: `User`, `Room`, `SensorDevice`, `Reservation`, `Schedule`); `sensor.py` (esquema Pydantic `SensorReading`) |
 | `app/routes/` | **Endpoints REST** | `auth.py` (login/register), `admin.py` (CRUD de aulas/sensores/usuarios/reservas), `sensors.py` (ingesta + control físico + emergencias), `reports.py` (ROI), `chat.py` (proxy Watson) |
-| `app/services/` | **Lógica de dominio** | `data_service.py` (pipeline de ingesta), `predictive_service.py` (ML + heurístico), `watson_service.py` (cliente Watson) |
+| `app/services/` | **Lógica de dominio** | `data_service.py` (pipeline de ingesta), `predictive_service.py` (ML + heurístico + blend feed-forward/feedback), `occupancy_service.py` (estimación de ocupación real vía CO₂ + gap plan-vs-real), `watson_service.py` (cliente Watson) |
 | `app/ml/` | **Artefactos ML** | `model.joblib` (modelo serializado, generado por `ml_pipeline/`) |
 
 ### 2.2 `frontend/` — Capa de presentación React
@@ -146,9 +147,11 @@ Climate-Cognitive-System/
 
 | Archivo | Propósito |
 |---|---|
-| `extract_data.py` | Exporta lecturas históricas de MongoDB a CSV (`data/`) |
-| `train_model.py` | Entrena un regresor `scikit-learn` sobre las features `[temp, hora, n_personas]` y serializa el resultado vía `joblib` en `backend/app/ml/model.joblib` |
+| `extract_data.py` | Exporta lecturas históricas de MongoDB a CSV (`data/`). Deriva `actual_occupancy` desde `co2_ppm` (mass-balance) y conserva `expected_occupancy` (plan) como columnas **distintas** |
+| `train_model.py` | Entrena un regresor `scikit-learn` sobre las features `[temperature, hour_of_day, expected_occupancy, actual_occupancy]` y serializa el resultado vía `joblib` en `backend/app/ml/model.joblib`. El **orden** de features debe coincidir con el vector construido en `predictive_service.py` |
 | `data/` | Datasets de entrenamiento / validación |
+
+> ⚠️ **Contrato de features:** el orden y nombres de `FEATURES` en `train_model.py` deben ser idénticos al vector `np.array([[current_temp, hour, expected_occupancy, actual_occupancy]])` de `predictive_service.calculate_cooling_demand`. Un desajuste produce inferencias silenciosamente incorrectas.
 
 ### 2.5 Archivos raíz adicionales
 
@@ -474,6 +477,80 @@ La prop `cursor={{ fill: 'transparent' }}` hace que el `<rect>` que Recharts dib
 
 ---
 
+### 3.7 Ocupación Esperada vs. Real (Feed-Forward + Feedback)
+
+**Problema:** El motor cognitivo original ajustaba el setpoint del AC usando **una sola** señal de ocupación: `expected_people`, tomada del `Schedule`/`Reservation`. Es la ocupación **planificada**. Pero un aula reservada para 40 personas a la que asisten 5 recibía enfriamiento para 40 → **desperdicio energético**, justo lo que el sistema busca evitar. La ocupación **real** nunca se medía, pese a que el sensor de CO₂ ya la contiene implícitamente.
+
+**Distinción conceptual — dos variables, nunca fusionadas:**
+
+| Variable | Origen | Disponible | Rol de control |
+|---|---|---|---|
+| `expected_occupancy` | Reserva / horario (plan) | **antes** de la clase | **Feed-forward** → pre-cooling anticipado |
+| `actual_occupancy` | Inferida del `co2_ppm` (medición) | **durante** la clase | **Feedback** → corrección en lazo cerrado |
+
+**Solución implementada** — Patrón estándar de control **feed-forward + feedback**.
+
+#### 3.7.1 Estimación de ocupación real desde CO₂
+
+`backend/app/services/occupancy_service.py` — balance de masa en estado estacionario:
+
+```python
+CO2_BASELINE_PPM   = 420.0   # aula vacía / aire exterior
+CO2_PPM_PER_PERSON = 25.0    # incremento de CO₂ por ocupante (calibrable)
+
+def estimate_actual_occupancy(co2_ppm, max_capacity=None):
+    if co2_ppm is None:
+        return None                                  # sin señal → feed-forward puro
+    est = max(0.0, (co2_ppm - CO2_BASELINE_PPM) / CO2_PPM_PER_PERSON)
+    return round(min(est, max_capacity) if max_capacity else est)
+```
+
+Ambas constantes son **calibrables**; los defaults asumen un aula con ventilación ligera. Se recomienda recalibrar contra un par de conteos manuales.
+
+#### 3.7.2 Mezcla ponderada en el motor predictivo
+
+`backend/app/services/predictive_service.py` combina ambas señales vía `FEEDBACK_WEIGHT` (0.6 por defecto):
+
+```python
+if actual_people is None:
+    effective_people = expected_people                       # feed-forward puro
+else:
+    effective_people = (1 - FEEDBACK_WEIGHT) * expected_people \
+                       + FEEDBACK_WEIGHT * actual_people      # feed-forward + feedback
+```
+
+- `FEEDBACK_WEIGHT = 0` → confía sólo en el plan.
+- `FEEDBACK_WEIGHT = 1` → confía sólo en el sensor.
+- `0.6` → se apoya en la realidad medida conservando anticipación durante el ramp-up inicial de la ventana de ocupación.
+
+En **modo ML**, ambas señales entran como features distintas: `[current_temp, hour, expected_occupancy, actual_occupancy]` — el modelo aprende a ponderarlas. En **modo heurístico**, se usa `effective_occupancy × 0.05`.
+
+#### 3.7.3 Gap tracking (plan vs. realidad)
+
+Cada `cognitive_action` persistida en MongoDB ahora incluye telemetría de ocupación:
+
+```json
+{
+  "expected_occupancy": 40,
+  "actual_occupancy": 6,
+  "effective_occupancy": 19.6,
+  "occupancy_gap": 34
+}
+```
+
+- `occupancy_gap = expected − actual`. Positivo → sobre-reserva / no-shows; negativo → sobrecupo.
+- Sirve como dataset para **demand forecasting**, detección de no-shows y métrica de eficiencia energética.
+
+#### 3.7.4 Coherencia física en la data sintética
+
+`ml_pipeline/extract_data.py` genera el gap de forma **físicamente coherente**: primero sortea `expected_occupancy` (plan), aplica una `attendance_rate` (0.55–0.95) + walk-ins para obtener `actual_occupancy`, y **deriva el `co2_ppm` a partir del actual** (no del expected). Así el dataset refleja la relación real CO₂ ↔ ocupación y demuestra el aporte del feedback loop.
+
+> ⚠️ **Limitación conocida:** al inicio de una ventana de ocupación el CO₂ aún no ha subido, por lo que `actual_occupancy` subestima transitoriamente. El `FEEDBACK_WEIGHT < 1` mitiga esto conservando peso en el plan. Un modelo dinámico (respuesta de primer orden del CO₂) es trabajo futuro.
+
+**Resultado:** El AC se ajusta a quién **está** en el aula, no sólo a quién fue reservado. Aula medio vacía → CO₂ bajo → menor carga térmica estimada → STANDBY antes → ahorro energético real.
+
+---
+
 ## 4. Hitos del Proyecto y Hoja de Ruta
 
 ### Infraestructura
@@ -507,6 +584,7 @@ La prop `cursor={{ fill: 'transparent' }}` hace que el `<rect>` que Recharts dib
 
 - [x] ML Pipeline con `scikit-learn` — entrenamiento, validación y serialización `joblib`
 - [x] Heurístico de bootstrap como **fallback** cuando `model.joblib` no existe (`personas × 0.05` °C de carga térmica)
+- [x] **Ocupación real vs. esperada** — estimación de `actual_occupancy` desde CO₂ (`occupancy_service.py`) + mezcla feed-forward/feedback (`FEEDBACK_WEIGHT`) + `occupancy_gap` persistido (sección 3.7)
 - [x] Persistencia de `cognitive_action` en MongoDB junto a cada lectura — campos: `ac_status` (`ON` / `STANDBY` / `DISABLED`), `target`, `model_used` (`ml` / `heuristic`)
 - [x] Integración **IBM Watson Assistant** vía proxy `/api/v1/chat/` (custom extension con OpenAPI publicado en `openapi_watson.json`)
 - [x] Motor de cálculo de **ROI energético** (`/reports/roi`): 7 días, kWh ahorrado, CO₂ evitado (kg), valor monetario (USD)
@@ -641,12 +719,16 @@ Lectura IoT (POST /sensors/)
   ¿Control habilitado?  ──No──▶  ac_status = DISABLED
         │ Sí
         ▼
-  Buscar contexto de aula (horario, target_temp, ocupación esperada)
+  Buscar contexto de aula (horario, target_temp, ocupación esperada, max_capacity)
+        │
+        ▼
+  Ocupación efectiva = feed-forward (expected/reserva) ⊕ feedback (actual desde CO₂)
+    effective = (1−w)·expected + w·actual      (w = FEEDBACK_WEIGHT; actual=None → expected)
         │
         ▼
   Calcular carga térmica
-    ├─ ML model (scikit-learn): predict([temp, hora, personas])
-    └─ Heurístico: personas × 0.05 (fallback si no hay model.joblib)
+    ├─ ML model (scikit-learn): predict([temp, hora, expected, actual])
+    └─ Heurístico: effective × 0.05 (fallback si no hay model.joblib)
         │
         ▼
   adjusted_target = target_temp − thermal_load

@@ -2,10 +2,17 @@
 Extract sensor_readings from MongoDB, engineer features, generate target label,
 and save a clean CSV ready for training.
 
+Occupancy features (kept as DISTINCT columns — never conflated):
+    expected_occupancy → PLANNED headcount from the room Schedule/Reservation.
+                         Feed-forward signal (known before arrival).
+    actual_occupancy   → REALIZED headcount inferred from CO2 via a steady-state
+                         mass-balance proxy. Feedback signal (measured reality).
+
 Target — target_temp_offset:
     How many degrees the cooling system must pre-compensate beyond the room's
-    target_temp, given current conditions.  Computed heuristically from:
-        people_load  = expected_people * 0.05 * hour_weight
+    target_temp, given current conditions. Computed heuristically from the
+    REALIZED thermal load:
+        people_load  = actual_occupancy * 0.05 * hour_weight
         solar_gain   = max(0, (temperature - 22) * 0.02)
     This acts as a bootstrap label; once real AC feedback data is available,
     replace _compute_offset() with actual measurements.
@@ -24,8 +31,30 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 DATA_DIR = Path(__file__).parent / "data"
 OUTPUT_CSV = DATA_DIR / "features.csv"
 
-FEATURES = ["temperature", "humidity", "co2_ppm", "hour_of_day", "day_of_week", "expected_people"]
+# CO2 mass-balance constants — MUST mirror backend/app/services/occupancy_service.py
+CO2_BASELINE_PPM = 420.0
+CO2_PPM_PER_PERSON = 25.0
+
+FEATURES = [
+    "temperature", "humidity", "co2_ppm",
+    "hour_of_day", "day_of_week",
+    "expected_occupancy", "actual_occupancy",
+]
 TARGET = "target_temp_offset"
+
+
+def _people_from_co2(co2: np.ndarray, max_capacity: int | None = None) -> np.ndarray:
+    """Inverse mass balance: infer realized headcount from CO2 (mirrors backend)."""
+    people = np.maximum(0.0, (co2 - CO2_BASELINE_PPM) / CO2_PPM_PER_PERSON)
+    if max_capacity is not None:
+        people = np.minimum(people, max_capacity)
+    return np.round(people)
+
+
+def _co2_from_people(people: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Forward mass balance: synthesize a plausible CO2 level from real occupancy."""
+    noise = rng.normal(0, 15, len(people))  # sensor/ventilation jitter in ppm
+    return np.maximum(350.0, CO2_BASELINE_PPM + people * CO2_PPM_PER_PERSON + noise).round(2)
 
 
 def main():
@@ -57,35 +86,44 @@ def _clean(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(subset=["timestamp"])
     df["hour_of_day"] = df["timestamp"].dt.hour
     df["day_of_week"] = df["timestamp"].dt.dayofweek
-    df = _add_synthetic_people(df)
+    df = _add_occupancy(df)
     df[TARGET] = _compute_offset(df)
     return df[FEATURES + [TARGET]]
 
 
-def _add_synthetic_people(df: pd.DataFrame) -> pd.DataFrame:
+def _add_occupancy(df: pd.DataFrame) -> pd.DataFrame:
+    """Attach BOTH occupancy signals.
+
+    actual_occupancy → derived from the measured CO2 (physical ground truth).
+    expected_occupancy → the plan; taken from the reading when present, else
+    synthesized from the academic-hours pattern to bootstrap the feed-forward view.
+    """
     rng = np.random.default_rng(0)
+
+    # Feedback signal: realized occupancy inferred from measured CO2.
+    df["actual_occupancy"] = _people_from_co2(df["co2_ppm"].to_numpy())
+
+    # Feed-forward signal: planned occupancy. Backfill missing plan with a pattern.
     is_class = (df["day_of_week"] < 5) & (df["hour_of_day"].between(8, 17))
-    
-    # Generamos la predicción sintética
-    synthetic_people = np.where(
+    synthetic_expected = np.where(
         is_class,
         rng.integers(10, 35, len(df)),
         rng.integers(0, 5, len(df)),
     )
-    
-    # CAMBIO: Solo aplicar los datos sintéticos donde expected_people sea nulo o no exista
-    if "expected_people" not in df.columns:
-        df["expected_people"] = synthetic_people
+    if "expected_occupancy" not in df.columns:
+        df["expected_occupancy"] = synthetic_expected
     else:
-        # Rellenar solo los vacíos (NaN) con la lógica sintética
-        df["expected_people"] = df["expected_people"].fillna(pd.Series(synthetic_people))
-        
+        df["expected_occupancy"] = df["expected_occupancy"].fillna(
+            pd.Series(synthetic_expected, index=df.index)
+        )
+
     return df
 
 
 def _compute_offset(df: pd.DataFrame) -> pd.Series:
+    # Realized load is driven by who ACTUALLY showed up, not who was booked.
     hour_weight = 1 + 0.3 * np.sin((df["hour_of_day"] - 8) * np.pi / 12)
-    people_load = df["expected_people"] * 0.05 * hour_weight
+    people_load = df["actual_occupancy"] * 0.05 * hour_weight
     solar_gain = np.maximum(0, (df["temperature"] - 22) * 0.02)
     noise = np.random.default_rng(1).normal(0, 0.08, len(df))
     return np.maximum(0, people_load + solar_gain + noise).round(4)
@@ -97,12 +135,22 @@ def _generate_synthetic(n: int) -> pd.DataFrame:
     days = rng.integers(0, 7, n)
     temps = rng.uniform(15.0, 45.0, n).round(2)
     humidity = rng.uniform(30.0, 100.0, n).round(2)
-    co2 = rng.uniform(350.0, 2000.0, n).round(2)
     is_class = (days < 5) & (hours >= 8) & (hours <= 17)
-    people = np.where(is_class, rng.integers(10, 35, n), rng.integers(0, 5, n))
+
+    # Feed-forward: PLANNED occupancy (the reservation).
+    expected = np.where(is_class, rng.integers(10, 35, n), rng.integers(0, 5, n))
+
+    # Feedback: REALIZED occupancy — a fraction of the plan actually shows up
+    # (no-shows / over-reservation), occasionally exceeding it (walk-ins).
+    attendance_rate = rng.uniform(0.55, 0.95, n)
+    actual = np.round(expected * attendance_rate).astype(int)
+    actual = np.maximum(0, actual + rng.integers(-2, 3, n))  # walk-ins / stragglers
+
+    # CO2 is generated FROM realized occupancy → the gap stays physically coherent.
+    co2 = _co2_from_people(actual, rng)
 
     hour_weight = 1 + 0.3 * np.sin((hours - 8) * np.pi / 12)
-    people_load = people * 0.05 * hour_weight
+    people_load = actual * 0.05 * hour_weight
     solar_gain = np.maximum(0, (temps - 22) * 0.02)
     noise = rng.normal(0, 0.08, n)
     target = np.maximum(0, people_load + solar_gain + noise).round(4)
@@ -113,7 +161,8 @@ def _generate_synthetic(n: int) -> pd.DataFrame:
         "co2_ppm": co2,
         "hour_of_day": hours,
         "day_of_week": days,
-        "expected_people": people,
+        "expected_occupancy": expected,
+        "actual_occupancy": actual,
         TARGET: target,
     })
 
