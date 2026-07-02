@@ -18,9 +18,10 @@ import numpy as np
 import pandas as pd
 import joblib
 from pathlib import Path
-from sklearn.ensemble import HistGradientBoostingRegressor 
+from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.inspection import permutation_importance
 
 DATA_CSV = Path(__file__).parent / "data" / "features.csv"
 MODEL_OUTPUT = Path(__file__).parent.parent / "backend" / "app" / "ml" / "model.joblib"
@@ -64,11 +65,16 @@ def main():
     print(f"Test RMSE : {rmse:.4f}°C")
     print(f"Test R²   : {r2:.4f}")
 
-    print("\nFeature importances:")
+    # HistGradientBoostingRegressor has no .feature_importances_ — use permutation
+    # importance (drop in R² when each feature is shuffled) on the held-out set.
+    perm = permutation_importance(
+        model, X_test, y_test, n_repeats=10, random_state=42
+    )
+    print("\nFeature importances (permutation, mean R² drop):")
     for feat, imp in sorted(
-        zip(FEATURES, model.feature_importances_), key=lambda x: -x[1]
+        zip(FEATURES, perm.importances_mean), key=lambda x: -x[1]
     ):
-        bar = "█" * int(imp * 40)
+        bar = "█" * int(max(0.0, imp) * 40)
         print(f"  {feat:<22} {imp:.3f}  {bar}")
 
     MODEL_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
