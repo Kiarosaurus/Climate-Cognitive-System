@@ -31,6 +31,10 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+*:Zone.Identifier
+
+# Office docs
+*.docx
 
 # Database
 *.sqlite3
