@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { UserPlus, AlertCircle, RefreshCw, CheckCircle2 } from 'lucide-react'
 import axios from 'axios'
+import { getApiErrorDetail } from '../api/client'
 import Logo from '../components/Logo'
 
 const ROLES = ['guest', 'collaborator', 'admin'] as const
@@ -29,7 +30,7 @@ export default function Register() {
       setResultStatus(data.status)
       setDone(true)
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      const detail = getApiErrorDetail(err)
       setError(detail ?? 'Error al registrar usuario.')
     } finally {
       setLoading(false)
@@ -87,8 +88,9 @@ export default function Register() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">Usuario</label>
+              <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide" htmlFor="reg-username">Usuario</label>
               <input
+                id="reg-username"
                 type="text"
                 required
                 value={form.username}
@@ -98,8 +100,9 @@ export default function Register() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">Contraseña</label>
+              <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide" htmlFor="reg-password">Contraseña</label>
               <input
+                id="reg-password"
                 type="password"
                 required
                 minLength={6}
@@ -110,8 +113,9 @@ export default function Register() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">Rol</label>
+              <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide" htmlFor="reg-role">Rol</label>
               <select
+                id="reg-role"
                 value={form.role}
                 onChange={e => setForm(f => ({ ...f, role: e.target.value as typeof ROLES[number] }))}
                 className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2.5 text-slate-100 text-sm focus:outline-none focus:border-blue-500 transition"

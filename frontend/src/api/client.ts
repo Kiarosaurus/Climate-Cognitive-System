@@ -32,4 +32,16 @@ api.interceptors.response.use(
   },
 )
 
+/** Extract the API error message (FastAPI's `response.data.detail`, falling back
+ *  to the transport message) without scattering unsound casts across views.
+ *  Returns undefined when nothing usable exists, so callers keep their own
+ *  `?? 'context-specific fallback'`. */
+export function getApiErrorDetail(err: unknown): string | undefined {
+  const e = err as { response?: { data?: { detail?: unknown } }; message?: string }
+  const detail = e?.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (detail != null) return JSON.stringify(detail)
+  return e?.message
+}
+
 export default api

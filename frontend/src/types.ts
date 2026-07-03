@@ -1,13 +1,20 @@
 export interface CognitiveAction {
-  ac_status: 'ON' | 'STANDBY'
+  ac_status: 'ON' | 'STANDBY' | 'DISABLED'
   cooling_mode: string | null
   target: number | null
-  thermal_load_offset: number
-  model: 'ml' | 'heuristic' | 'none'
+  // Omitted by the backend on the no-context path (model: 'none').
+  thermal_load_offset?: number
+  model: 'ml' | 'heuristic' | 'manual' | 'none'
+  // Occupancy telemetry (feed-forward + feedback) — present since Tier 2.
+  expected_occupancy?: number | null
+  actual_occupancy?: number | null
+  effective_occupancy?: number | null
+  occupancy_gap?: number | null
 }
 
 export interface RoomContext {
-  room_id: number
+  // Room PKs are strings (e.g. "A403"), mirroring rooms.id in PostgreSQL.
+  room_id: string
   room_name: string
   max_capacity: number
   target_temp: number

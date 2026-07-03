@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Users, RefreshCw, AlertCircle, CheckCircle, XCircle, ShieldCheck } from 'lucide-react'
-import api from '../api/client'
+import api, { getApiErrorDetail } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 
 interface UserRow {
@@ -60,7 +60,7 @@ export default function UserManagement() {
       await api.patch(`/admin/users/${userId}/status`, { status })
       setUsers(prev => prev.map(u => u.user_id === userId ? { ...u, status } : u))
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      const detail = getApiErrorDetail(err)
       setError(detail ?? 'Error actualizando estado.')
     } finally {
       setActionLoading(null)

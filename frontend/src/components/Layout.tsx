@@ -78,6 +78,15 @@ export default function Layout() {
 
   const isAnyVisible   = showReal || showSim
   const activeEntries  = showReal ? realEmergencies : showSim ? simulatedEmergencies : []
+
+  // Escape dismisses the emergency modal. The session-expired modal is
+  // deliberately blocking and cannot be dismissed with the keyboard.
+  useEffect(() => {
+    if (!isAnyVisible || isPopupDismissed) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') dismissPopup() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isAnyVisible, isPopupDismissed, dismissPopup])
   const affectedRooms  = activeEntries.map(e => e.room_name).join(', ')
 
   // Theming tokens
@@ -134,13 +143,18 @@ export default function Layout() {
       {/* ── Session expired modal — highest priority, blocks all interaction ── */}
       {isSessionExpired && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-slate-800 border border-slate-600 rounded-2xl shadow-2xl w-full max-w-md">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="session-expired-title"
+            className="bg-slate-800 border border-slate-600 rounded-2xl shadow-2xl w-full max-w-md"
+          >
             <div className="flex flex-col items-center px-8 py-8 gap-5 text-center">
               <div className="flex items-center justify-center w-16 h-16 rounded-full bg-yellow-500/15 border border-yellow-500/30">
                 <ShieldAlert size={32} className="text-yellow-400" />
               </div>
               <div className="space-y-2">
-                <h2 className="text-lg font-bold text-slate-100">Sesión caducada</h2>
+                <h2 id="session-expired-title" className="text-lg font-bold text-slate-100">Sesión caducada</h2>
                 <p className="text-sm text-slate-400 leading-relaxed">
                   Tu sesión ha caducado o el servidor ha sido reiniciado.
                   Por seguridad, debes volver a autenticarte.
@@ -148,6 +162,7 @@ export default function Layout() {
               </div>
               <button
                 onClick={handleGoToLogin}
+                autoFocus
                 className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm px-6 py-3 rounded-xl transition-colors"
               >
                 Ir al Login
@@ -167,13 +182,18 @@ export default function Layout() {
       {/* ── Critical / simulation modal ── */}
       {isAnyVisible && !isPopupDismissed && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
-          <div className={`border-2 rounded-2xl shadow-2xl w-full max-w-lg ${modalBg}`}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="emergency-modal-title"
+            className={`border-2 rounded-2xl shadow-2xl w-full max-w-lg ${modalBg}`}
+          >
 
             {/* Header */}
             <div className={`flex items-center justify-between px-6 pt-6 pb-4 border-b ${modalHeaderBdr}`}>
               <div className="flex items-center gap-3">
                 <AlertTriangle size={28} className={`${modalIconColor} animate-pulse shrink-0`} />
-                <h2 className={`text-lg font-bold uppercase tracking-wide ${modalTitleColor}`}>
+                <h2 id="emergency-modal-title" className={`text-lg font-bold uppercase tracking-wide ${modalTitleColor}`}>
                   {modalTitle}
                 </h2>
               </div>
@@ -210,6 +230,7 @@ export default function Layout() {
             <div className="px-6 pb-6 flex justify-end">
               <button
                 onClick={dismissPopup}
+                autoFocus
                 className={`flex items-center gap-2 text-white font-bold text-sm px-6 py-2.5 rounded-xl transition-colors ${modalBtnBg}`}
               >
                 <AlertTriangle size={15} />

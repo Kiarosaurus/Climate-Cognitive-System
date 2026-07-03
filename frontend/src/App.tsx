@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import { EmergencyProvider } from './context/EmergencyContext'
@@ -6,13 +6,23 @@ import Layout from './components/Layout'
 import Login from './components/Login'
 import GlobalDashboard from './views/GlobalDashboard'
 import RoomSearch from './views/RoomSearch'
-import RoomDetail from './views/RoomDetail'
 import SensorSearch from './views/SensorSearch'
 import Reservations from './views/Reservations'
 import UserManagement from './views/UserManagement'
 import Infrastructure from './views/Infrastructure'
-import ROIReport from './views/ROIReport'
 import Register from './views/Register'
+
+// Chart-heavy views load on demand — keeps Recharts out of the initial bundle.
+const RoomDetail = lazy(() => import('./views/RoomDetail'))
+const ROIReport  = lazy(() => import('./views/ROIReport'))
+
+function RouteFallback() {
+  return (
+    <div className="flex items-center justify-center h-64 text-slate-500 text-sm">
+      Cargando…
+    </div>
+  )
+}
 
 /** Redirects unauthenticated users to /login. When session expires, renders
  *  children so Layout's session-expired modal can display instead of hard redirect. */
@@ -47,6 +57,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <EmergencyProvider>
+      <Suspense fallback={<RouteFallback />}>
       <Routes>
         {/* Public */}
         <Route path="/login"    element={<Login />} />
@@ -107,6 +118,7 @@ export default function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
       </EmergencyProvider>
     </BrowserRouter>
   )

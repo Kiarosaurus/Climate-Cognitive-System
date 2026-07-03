@@ -3,7 +3,7 @@ import {
   Building2, Cpu, Radio, PlusCircle, Pencil, Trash2,
   RefreshCw, AlertCircle, CheckCircle2, X, Info, DoorOpen, TriangleAlert,
 } from 'lucide-react'
-import api from '../api/client'
+import api, { getApiErrorDetail } from '../api/client'
 import SearchableSelect from '../components/SearchableSelect'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -200,7 +200,7 @@ export default function Infrastructure() {
       }
       await doRegisterRoom()
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      const detail = getApiErrorDetail(err)
       showToast('error', detail ?? 'No se pudo registrar el aula.')
     } finally {
       setRoomSubmitting(false)
@@ -215,7 +215,7 @@ export default function Infrastructure() {
     try {
       await doRegisterRoom()
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      const detail = getApiErrorDetail(err)
       showToast('error', detail ?? 'No se pudo registrar el aula.')
     } finally {
       setRoomSubmitting(false)
@@ -253,7 +253,7 @@ export default function Infrastructure() {
       setEditRoomForm({ new_id: '', name: '', max_capacity: '30', target_temp: '22' })
       await refreshRooms()
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      const detail = getApiErrorDetail(err)
       showToast('error', detail ?? 'No se pudo actualizar el aula.')
     } finally { setRoomSubmitting(false) }
   }
@@ -280,7 +280,7 @@ export default function Infrastructure() {
       setRegSensorForm(f => ({ ...f, id: '' }))
       await refreshDevices()
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      const detail = getApiErrorDetail(err)
       showToast('error', detail ?? 'No se pudo registrar el sensor.')
     } finally { setSensorSubmitting(false) }
   }
@@ -318,7 +318,7 @@ export default function Infrastructure() {
       setEditSensorRoomId('')
       await refreshDevices()
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      const detail = getApiErrorDetail(err)
       showToast('error', detail ?? 'No se pudo actualizar el sensor.')
     } finally { setSensorSubmitting(false) }
   }
@@ -354,7 +354,7 @@ export default function Infrastructure() {
       setRoomImpact(null)
       await Promise.all([refreshRooms(), refreshDevices()])
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      const detail = getApiErrorDetail(err)
       showToast('error', detail ?? 'No se pudo eliminar el aula.')
     } finally { setRoomSubmitting(false) }
   }
@@ -373,7 +373,7 @@ export default function Infrastructure() {
       setDeleteSensorConfirm('')
       await refreshDevices()
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      const detail = getApiErrorDetail(err)
       showToast('error', detail ?? 'No se pudo eliminar el sensor.')
     } finally { setSensorSubmitting(false) }
   }

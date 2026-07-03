@@ -4,7 +4,7 @@ import {
   Clock, CheckCircle2, PlusCircle, X, Pencil,
   Calendar, DoorOpen, Trash2, TriangleAlert,
 } from 'lucide-react'
-import api from '../api/client'
+import api, { getApiErrorDetail } from '../api/client'
 import SearchableSelect from '../components/SearchableSelect'
 
 interface Room { id: number; name: string; max_capacity: number }
@@ -214,7 +214,7 @@ export default function Reservations() {
       fetchReservations()
     } catch (err: unknown) {
       console.error('[Reservations] create error:', err)
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      const detail = getApiErrorDetail(err)
       showToast('error', detail ?? 'No se pudo crear la reserva.')
     } finally {
       setSubmitting(false)
@@ -232,7 +232,7 @@ export default function Reservations() {
       setPendingEditData(null)
     } catch (err: unknown) {
       console.error('[Reservations] update error:', err)
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      const detail = getApiErrorDetail(err)
       showToast('error', detail ?? 'No se pudo actualizar la reserva.')
     } finally {
       setSubmitting(false)
@@ -256,7 +256,7 @@ export default function Reservations() {
       })
       fetchReservations()
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      const detail = getApiErrorDetail(err)
       showToast('error', detail ?? 'No se pudo eliminar la reserva.')
     } finally {
       setSubmitting(false)

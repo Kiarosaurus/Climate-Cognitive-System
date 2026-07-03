@@ -9,7 +9,7 @@ import {
   BrainCircuit, Inbox, Cpu, LayoutDashboard,
 } from 'lucide-react'
 import axios from 'axios'
-import api from '../api/client'
+import api, { getApiErrorDetail } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import type { CombinedReading, ReadingInput } from '../types'
 import {
@@ -218,8 +218,8 @@ export default function GlobalDashboard() {
       const { data } = await api.post('/sensors/', { ...input, is_simulated: true, timestamp: new Date().toISOString() })
       setReadings(prev => [...prev.slice(-(MAX_POINTS - 1)), { input, output: data, sentAt: Date.now() }])
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } }; message?: string })?.response?.data?.detail
-        ?? (err as { message?: string })?.message ?? 'Error desconocido'
+      const msg = getApiErrorDetail(err)
+        ?? 'Error desconocido'
       setError(String(msg))
     } finally { setSending(false) }
   }, [])
@@ -241,8 +241,8 @@ export default function GlobalDashboard() {
         setError(null)
       } catch (err: unknown) {
         if (cancelled) return
-        const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-          ?? (err as { message?: string })?.message ?? 'Error cargando lecturas reales'
+        const msg = getApiErrorDetail(err)
+          ?? 'Error cargando lecturas reales'
         setError(String(msg))
       }
     }
@@ -510,8 +510,8 @@ export default function GlobalDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {[...readings].reverse().slice(0, 15).map((r, i) => (
-                  <tr key={i} className={`border-b border-slate-700/50 ${r.output.anomaly_detected ? 'bg-red-900/10' : ''}`}>
+                {[...readings].reverse().slice(0, 15).map(r => (
+                  <tr key={r.output.inserted_id || r.sentAt} className={`border-b border-slate-700/50 ${r.output.anomaly_detected ? 'bg-red-900/10' : ''}`}>
                     <td className="py-2 pr-4 font-mono text-slate-300">{r.output.sensor_id}</td>
                     <td className={`py-2 pr-4 font-semibold ${getColorTemp(r.input.temperature, r.output.cognitive_action?.target ?? r.input.temperature)}`}>{fmt(r.input.temperature, '°C')}</td>
                     <td className={`py-2 pr-4 font-semibold ${getColorHumedad(r.input.humidity)}`}>{fmt(r.input.humidity, '%')}</td>

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { LogIn, AlertCircle, RefreshCw } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { getApiErrorDetail } from '../api/client'
 import Logo from './Logo'
 
 export default function Login() {
@@ -22,7 +23,7 @@ export default function Login() {
       navigate('/', { replace: true })
     } catch (err: unknown) {
       const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        getApiErrorDetail(err)
       setError(detail ?? 'Credenciales incorrectas. Inténtalo de nuevo.')
     } finally {
       setLoading(false)
@@ -54,10 +55,11 @@ export default function Login() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">
+              <label htmlFor="login-username" className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">
                 Usuario
               </label>
               <input
+                id="login-username"
                 type="text"
                 required
                 autoComplete="username"
@@ -69,10 +71,11 @@ export default function Login() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">
+              <label htmlFor="login-password" className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">
                 Contraseña
               </label>
               <input
+                id="login-password"
                 type="password"
                 required
                 autoComplete="current-password"

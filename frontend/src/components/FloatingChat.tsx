@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type KeyboardEvent } from 'react'
 import { MessageCircle, X, Send, Bot } from 'lucide-react'
-import api from '../api/client'
+import api, { getApiErrorDetail } from '../api/client'
 
 interface Message {
   sender: 'user' | 'watson'
@@ -53,7 +53,7 @@ export default function FloatingChat() {
       setSessionId(data.session_id)
       setMessages(prev => [...prev, { sender: 'watson', text: data.response }])
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      const detail = getApiErrorDetail(err)
       setMessages(prev => [
         ...prev,
         { sender: 'watson', text: detail ?? 'Error al conectar con Watson. Inténtalo de nuevo.' },

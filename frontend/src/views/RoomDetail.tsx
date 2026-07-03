@@ -11,7 +11,7 @@ import {
   Thermometer, BrainCircuit, Brain, Snowflake, Bot, Sigma,
   Inbox, LineChart as LineChartIcon, type LucideIcon,
 } from 'lucide-react'
-import api from '../api/client'
+import api, { getApiErrorDetail } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import {
   MetricCard, STATUS_TOKENS, tempStatus, coStatus,
@@ -361,7 +361,7 @@ export default function RoomDetail() {
             : d
         )
       )
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      const detail = getApiErrorDetail(err)
       setControlError(detail ?? 'Error al actualizar el sensor.')
     }
   }
@@ -375,7 +375,7 @@ export default function RoomDetail() {
       await api.put(`/admin/rooms/${id}/policy`, { control_policy: value })
     } catch (err: unknown) {
       setRoom(r => (r ? { ...r, control_policy: prev ?? 'auto' } : r))   // revert
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      const detail = getApiErrorDetail(err)
       setControlError(detail ?? 'No se pudo cambiar la política de control.')
     } finally {
       setPolicySaving(false)
@@ -871,8 +871,8 @@ export default function RoomDetail() {
               </tr>
             </thead>
             <tbody>
-              {readings.slice(0, 20).map((r, i) => (
-                <tr key={i} className="border-b border-slate-700/50">
+              {readings.slice(0, 20).map(r => (
+                <tr key={`${r.sensor_id}-${r.timestamp}`} className="border-b border-slate-700/50">
                   <td className="py-2 pr-4 font-mono text-slate-300 text-xs">{r.sensor_id}</td>
                   <td className={`py-2 pr-4 font-semibold ${getColorTemp(r.temperature, r.cognitive_action?.target ?? targetTemp)}`}>
                     {fmt(r.temperature, '°C')}
