@@ -41,10 +41,13 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "backend"))
 
 # Windows consoles default to cp1252 — force UTF-8 so log arrows/accents don't crash.
-try:
-    sys.stdout.reconfigure(encoding="utf-8")
-except Exception:
-    pass
+# reconfigure exists on TextIOWrapper but not the TextIO base type — fetch dynamically.
+_reconfigure = getattr(sys.stdout, "reconfigure", None)
+if callable(_reconfigure):
+    try:
+        _reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 # Mirror the backend occupancy/thermal constants — single source of truth.
 from app.services.occupancy_service import (  # noqa: E402

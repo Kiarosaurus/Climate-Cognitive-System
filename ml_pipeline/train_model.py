@@ -69,10 +69,13 @@ def _heuristic_offset(X: np.ndarray) -> np.ndarray:
 
 def main():
     # Windows consoles default to cp1252 — force UTF-8 so °C/R²/bar chars don't crash.
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
+    # reconfigure exists on TextIOWrapper but not the TextIO base type — fetch dynamically.
+    _reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if callable(_reconfigure):
+        try:
+            _reconfigure(encoding="utf-8")
+        except Exception:
+            pass
 
     if not DATA_CSV.exists():
         raise FileNotFoundError(f"{DATA_CSV} not found. Run extract_data.py first.")
