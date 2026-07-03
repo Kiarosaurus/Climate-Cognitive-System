@@ -270,9 +270,10 @@ def construir_payload(sensores, aforo):
         # MQ7 co_raw converted to real ppm with the calibrated curve.
         "co_ppm":      mq7_raw_to_ppm(_to_float(mq7, "co_raw", "co_ppm")),
         "is_simulated": IS_SIMULATED,
-        # occupancy count: the server ignores it today (expected_people comes from
-        # the Schedule); sent anyway for traceability; breaks nothing.
-        "aforo":       aforo,
+        # CURRENT headcount from the camera (line-crossing count) — not the room's
+        # max capacity nor the reservation plan. Persisted server-side next to the
+        # CO2-derived actual_occupancy so the mass-balance proxy can be validated.
+        "camera_occupancy": aforo,
     }
 
 
@@ -302,7 +303,7 @@ def hilo_combinado():
             print("[Merge] Waiting for Arduino data...")
             continue
 
-        sensores["aforo"] = aforo
+        sensores["camera_occupancy"] = aforo
 
         salida = json.dumps(sensores, ensure_ascii=False)
         print(f"[FINAL JSON] {salida}")

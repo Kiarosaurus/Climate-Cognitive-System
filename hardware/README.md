@@ -28,6 +28,11 @@ Arduino UNO ──Serial JSON (~2 s)──► sistema.py ──HTTPS POST──�
 The backend responds with the `cognitive_action` computed for the reading
 (`ac_status`, adjusted target, thermal load offset), which the script logs.
 
+The camera count travels as `camera_occupancy` — the CURRENT headcount (not the
+room's max capacity, not the reservation plan). The backend persists it next to
+the CO₂-derived `actual_occupancy`, so the mass-balance proxy can be validated
+and re-calibrated against a direct measurement.
+
 ## Running
 
 ```bash

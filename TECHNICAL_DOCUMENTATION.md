@@ -181,7 +181,7 @@ See section [3.8](#38-utec-seed-dataset-seed_data) for the attendance-model deta
 
 | File | Purpose |
 |---|---|
-| `sistema.py` | Client-side gateway: reads the **Arduino UNO** (DHT11, MQ-135, MQ-7) over Serial as JSON, counts room occupancy with the laptop camera (**MediaPipe Face Detection**, virtual-line crossing), converts the MQ-7 raw ADC value to CO ppm via the datasheet curve, and POSTs the merged reading to the deployed backend (`/api/v1/sensors/`) |
+| `sistema.py` | Client-side gateway: reads the **Arduino UNO** (DHT11, MQ-135, MQ-7) over Serial as JSON, counts room occupancy with the laptop camera (**MediaPipe Face Detection**, virtual-line crossing), converts the MQ-7 raw ADC value to CO ppm via the datasheet curve, and POSTs the merged reading to the deployed backend (`/api/v1/sensors/`). The camera count travels as `camera_occupancy` (current headcount) and is persisted next to the CO₂-derived `actual_occupancy` to validate the mass-balance proxy |
 | `README.md` | Components, data flow, MQ-7 clean-air calibration and run instructions |
 
 > ⚠️ **Feature contract:** the model is saved as a **bundle** with a `features` list. `predictive_service.py` reads `bundle["features"]` and assembles the inference row in that order (a `feat → value` map), so reordering/adding features does not silently break inference. `room_id_map` translates `room_id → room_code`; an unknown room at inference uses code `-1`. The legacy format (a bare estimator) is still supported with the default 4-feature order.
