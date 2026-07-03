@@ -26,7 +26,7 @@
 \usepackage{xcolor}
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric,arrows.meta,positioning,fit,backgrounds,calc}
-\usepackage[hidelinks]{hyperref}
+\usepackage{hyperref}
 \usepackage{titlesec}
 \usepackage{float}
 
@@ -34,6 +34,14 @@
 \definecolor{ccsdark}{HTML}{0B2545}
 \definecolor{ccsgray}{HTML}{5B6773}
 \definecolor{ccssoft}{HTML}{E8F0FE}
+
+% Digital-first link styling on the project palette (URLs must be visibly links).
+\hypersetup{colorlinks=true, urlcolor=ccsblue, linkcolor=ccsdark, citecolor=ccsgray}
+
+% Compact bibliography spacing so the reference list closes with the document
+% instead of orphaning the last entry onto a near-empty page.
+\let\oldthebibliography\thebibliography
+\renewcommand{\thebibliography}[1]{\oldthebibliography{#1}\setlength{\itemsep}{2pt}}
 
 \titleformat{\section}{\normalfont\Large\bfseries\color{ccsdark}}{\thesection.}{0.5em}{}
 \titleformat{\subsection}{\normalfont\large\bfseries\color{ccsblue}}{\thesubsection}{0.5em}{}
@@ -350,7 +358,7 @@ Despliegue & Docker + Docker Compose, Nginx \\
 \begin{minipage}[t]{0.46\linewidth}
 \textbf{Funcionalidades opcionales}
 \begin{itemize}
-\item Migración a nube gestionada (AWS/GCP).
+\item Migración a la nube (AWS/GCP).
 \item Reentrenamiento automático del modelo.
 \item Control real del A/C por emisor IR calibrado.
 \item Notificaciones por correo.
@@ -408,6 +416,9 @@ decisiones anticipatorias basadas en datos.
 \end{itemize}
 
 % ============================ REFERENCIAS =================================
+% Dedicated final page: without the break the list splits and strands the last
+% entry alone on a near-empty page.
+\newpage
 \bibliographystyle{plain}
 \bibliography{refs}
 
