@@ -60,14 +60,14 @@
 
 {\large\textbf{Integrantes del grupo}\par}
 \vspace{0.3cm}
-\begin{tabular}{ll}
-\textcolor{ccsgray}{Balcazar Santa Cruz, Kiara Alexandra} & \textcolor{ccsgray}{[202210403]} \\
-\textcolor{ccsgray}{Gonzales Torres, Aaron Naif} & \textcolor{ccsgray}{[202XXXXXX]} \\
-\textcolor{ccsgray}{Surco Vergara, Maria Fernanda} & \textcolor{ccsgray}{[202110358]} \\
+\begin{tabular}{l}
+\textcolor{ccsgray}{Balcazar Santa Cruz, Kiara Alexandra} \\
+\textcolor{ccsgray}{Gonzales Torres, Aaron Naif} \\
+\textcolor{ccsgray}{Surco Vergara, Maria Fernanda} \\
 \end{tabular}
 
 \vfill
-{\large \today\par}
+{\large 2 de julio de 2026\par}
 \end{titlepage}
 
 % ============================ ÍNDICE (opcional) ============================
@@ -91,8 +91,10 @@ sistemáticamente mayor al necesario.
 energético; al personal de mantenimiento, que carece de datos para optimizar; y
 al medio ambiente, por la huella de carbono asociada al consumo eléctrico.
 
-\paragraph{¿Por qué es importante resolverlo?} La climatización representa una
-fracción considerable del gasto eléctrico de un campus. Ajustar la demanda a la
+\paragraph{¿Por qué es importante resolverlo?} Los sistemas HVAC representan
+cerca del 50\,\% del consumo energético de un edificio no
+residencial~\cite{perezlombard2008}, la mayor fracción individual del gasto
+eléctrico de un campus. Ajustar la demanda a la
 ocupación real reduce costos y emisiones sin sacrificar el confort térmico
 recomendado (\textasciitilde 20--24\,°C según ASHRAE~55~\cite{ashrae55}).
 
@@ -186,8 +188,10 @@ espejo con la autorización del backend.
 
 La telemetría se captura con sensores de bajo costo sobre un microcontrolador
 que la envía al backend por HTTP. En la versión actual se cuenta con un nodo
-sensor funcional; el resto del despliegue se modela mediante un simulador y un
-dataset sembrado reproducible (ver §\ref{sec:viab}).
+sensor funcional --- su montaje y operación se evidencian en los videos de
+demostración enlazados en §\ref{sec:recursos} ---; el resto del despliegue se
+modela mediante un simulador y un dataset sembrado reproducible
+(ver §\ref{sec:viab}).
 
 \begin{table}[h]\centering\small
 \begin{tabular}{@{}L{2.6cm}L{3.4cm}L{4.2cm}L{3.4cm}@{}}
@@ -197,14 +201,19 @@ dataset sembrado reproducible (ver §\ref{sec:viab}).
 DHT22 & Ambiente térmico & Temperatura (°C), humedad (\%) & \textasciitilde 30 s \\
 MH-Z19B & Calidad de aire & CO\textsubscript{2} (ppm) $\rightarrow$ ocupación real & \textasciitilde 30 s \\
 MQ-7 & Seguridad & Monóxido de carbono CO (ppm) & \textasciitilde 30 s \\
-Emisor IR & Actuador & Comando de \emph{setpoint} al A/C & bajo demanda \\
-ESP32 / Raspberry Pi & Gateway & Agrega y transmite las lecturas & --- \\
+Emisor IR\textsuperscript{*} & Actuador & Comando de \emph{setpoint} al A/C & bajo demanda \\
+ESP32 & Gateway & Agrega y transmite las lecturas & --- \\
 \bottomrule
 \end{tabular}
 \caption{Hardware, función, datos y frecuencia de envío.}
+{\footnotesize\raggedright \textsuperscript{*}Actuador de fase 2: en la
+versión inicial la acción cognitiva (\texttt{ON}/\texttt{STANDBY}) se registra
+y visualiza en la aplicación; el envío IR real al A/C es funcionalidad
+opcional (§\ref{sec:alcance}).\par}
 \end{table}
 
-\paragraph{Conexión con la aplicación.} El gateway (ESP32/Raspberry Pi) publica
+\paragraph{Conexión con la aplicación.} El gateway ESP32 (con Raspberry Pi
+evaluada como alternativa) publica
 cada lectura como \texttt{POST /api/v1/sensors/} en formato JSON
 (\texttt{sensor\_id}, \texttt{temperature}, \texttt{humidity},
 \texttt{co2\_ppm}, \texttt{co\_ppm}, \texttt{timestamp}), autenticado por
@@ -282,13 +291,13 @@ confort estable para el usuario.
 \draw[arr](api)--(mongo);
 \draw[arr](api)--(pg);
 \draw[arr](api)--(ml);
-\draw[arr](app.south)|-(watson.west);
+\draw[arr]([xshift=3mm]api.south) -- ++(0,-2.35cm) -| (watson.south);
 \draw[arr](hw.east)-|(api.south) node[midway,below,black]{\scriptsize POST /sensors/};
 \draw[arr](api.south east)-- ++(0,-6mm) -| (hw.east);
 \end{tikzpicture}
 \caption{Arquitectura: usuarios y administrador operan la app web, que consume
-el backend FastAPI; éste persiste en MongoDB/PostgreSQL, invoca el modelo ML e
-IBM Watson, y recibe la telemetría del hardware IoT.}
+el backend FastAPI; éste persiste en MongoDB/PostgreSQL, invoca el modelo ML y
+actúa como \emph{proxy} de IBM Watson, y recibe la telemetría del hardware IoT.}
 \end{figure}
 
 % ============================ 8. TECNOLOGÍAS ==============================
@@ -311,7 +320,7 @@ Despliegue & Docker + Docker Compose, Nginx \\
 \end{table}
 
 % ============================ 9. ALCANCE ==================================
-\section{Alcance inicial del proyecto}
+\section{Alcance inicial del proyecto}\label{sec:alcance}
 
 \begin{minipage}[t]{0.5\linewidth}
 \textbf{Funcionalidades obligatorias}
@@ -374,7 +383,7 @@ decisiones anticipatorias basadas en datos.
 \end{itemize}
 
 % ============================ 12. RECURSOS Y ENLACES ======================
-\section{Recursos y enlaces del proyecto}
+\section{Recursos y enlaces del proyecto}\label{sec:recursos}
 
 \begin{itemize}
 \item \textbf{Repositorio de código (GitHub):} \\
