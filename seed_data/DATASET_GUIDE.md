@@ -49,8 +49,9 @@ python seed_data/generate_dataset.py --wipe      # limpia sensor_readings antes 
 Overrides: `MONGO_URI`, `POSTGRES_URI`.
 
 > Reset previo recomendado: `docker compose down -v && docker compose up -d` (re-ejecuta
-> los init scripts), luego correr el generador. El usuario `profesor_utec` se crea para
-> asociar las reservas.
+> los init scripts), luego correr el generador. El usuario `profesor_utec`
+> (password `changeme123`, **solo para dev/seed** — no usar en despliegues públicos)
+> se crea para asociar las reservas.
 
 ## Fuente única de constantes
 

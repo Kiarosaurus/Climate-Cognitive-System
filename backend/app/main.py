@@ -136,6 +136,7 @@ def _seed_admin(SessionLocal):
     logger.info("_seed_admin: starting.")
     db = SessionLocal()
     try:
+        from app.config import ADMIN_PASSWORD
         from app.models.admin import User
         from app.core.security import hash_password, verify_password
 
@@ -143,7 +144,7 @@ def _seed_admin(SessionLocal):
         if not admin_user:
             db.add(User(
                 username="admin",
-                hashed_password=hash_password("admin"),
+                hashed_password=hash_password(ADMIN_PASSWORD),
                 role="admin",
                 status="active",
             ))
@@ -159,11 +160,11 @@ def _seed_admin(SessionLocal):
             if hash_ok:
                 logger.info("_seed_admin: admin exists with a valid hash — credentials left untouched.")
             else:
-                admin_user.hashed_password = hash_password("admin")
+                admin_user.hashed_password = hash_password(ADMIN_PASSWORD)
                 admin_user.role = "admin"
                 admin_user.status = "active"
                 logger.warning(
-                    "_seed_admin: unreadable password hash — reset to the default. "
+                    "_seed_admin: unreadable password hash — reset to ADMIN_PASSWORD. "
                     "Log in and change it immediately."
                 )
         db.commit()

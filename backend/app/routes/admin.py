@@ -587,7 +587,7 @@ def update_user_status(
     if current_user.id == user_id:
         raise HTTPException(
             status_code=400,
-            detail="Un administrador no puede modificar su propio estado de cuenta o auto-rechazarse.",
+            detail="An administrator cannot modify or self-lock their own account status.",
         )
     if payload.status not in STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {sorted(STATUSES)}")
@@ -608,6 +608,8 @@ def list_reservations(
     db: Session = Depends(get_db_sql),
     current_user: User = Depends(get_current_user),
 ):
+    # Reservations expose usernames/agendas — not for guests.
+    _require_admin_or_collaborator(current_user)
     reservations = db.query(Reservation).order_by(Reservation.start_time.desc()).all()
     return [
         {

@@ -829,6 +829,8 @@ in Tier 2).
 - [ ] Pydantic `response_model` schemas on all endpoints (today endpoints return raw dicts — input validation is complete, output schemas are pending)
 - [ ] Pagination on the admin list endpoints (`/admin/users`, `/admin/reservations`); `/sensors/` already paginates
 - [ ] Migrate `datetime.utcnow()` (deprecated in Python 3.12+) to `datetime.now(timezone.utc)` keeping the documented naive-UTC storage convention
+- [ ] Rate limiting on `/auth/login` and `/auth/register` (e.g. slowapi) — brute-force / pending-account spam protection
+- [ ] Per-device API keys for sensor ingest — the shared `WATSON_EXTENSION_KEY` is an anti-abuse gate, not device authentication
 - [ ] **Automatic retraining** pipeline of the ML model with real data (scheduled job reading from MongoDB)
 - [ ] Replace the **synthetic** `target_temp_offset` with **real AC feedback** — the only path to genuine quality improvements (Tier 3)
 - [ ] Replace the deterministic `climate_service` with a **real weather API** when connectivity is available
@@ -977,11 +979,12 @@ IoT reading (POST /sensors/)
 | `SECRET_KEY` | *(random in memory)* | JWT signing key — set in production |
 | `ALGORITHM` | `HS256` | JWT algorithm |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | JWT token lifetime |
+| `ADMIN_PASSWORD` | `admin` | Initial password for the seeded admin — default is for local dev ONLY; public deployments must set it |
 | `LOCAL_UTC_OFFSET_HOURS` | `-5` | Whole-hour UTC offset to phase-align the diurnal climate drift (America/Lima, no DST) |
 | `WATSON_API_KEY` | `""` | IBM Watson Assistant API key |
 | `WATSON_URL` | `""` | Watson instance endpoint |
 | `WATSON_ASSISTANT_ID` | `""` | Watson assistant ID |
-| `WATSON_EXTENSION_KEY` | `""` | Shared key for the Watson custom extension (`X-API-Key` header) |
+| `WATSON_EXTENSION_KEY` | `""` | Shared key for the Watson custom extension (`X-API-Key` header). Anti-abuse gate, not a secret: the frontend bakes it into the public JS bundle |
 
 ---
 

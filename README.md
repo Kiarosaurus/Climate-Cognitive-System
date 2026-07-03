@@ -212,8 +212,12 @@ A default admin account is auto-seeded on first startup:
 
 ```
 username: admin
-password: admin      # ⚠️ change immediately after first login in production
+password: admin      # local development default (ADMIN_PASSWORD env unset)
 ```
+
+> ⚠️ **Public deployments MUST set `ADMIN_PASSWORD`** in `.env` before first boot
+> (or rotate the password immediately after). The seeder never overwrites a
+> valid existing hash, so a rotated password survives restarts.
 
 ### Option B — Manual / Local Dev
 
@@ -247,6 +251,7 @@ POSTGRES_DB=climate_db
 SECRET_KEY=<random-hex>           # auto-generated in memory if omitted (tokens reset on restart)
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=15
+ADMIN_PASSWORD=<strong-password>  # initial 'admin' password — REQUIRED for public deployments
 
 # Deployment timezone — whole-hour UTC offset to phase-align the diurnal drift.
 LOCAL_UTC_OFFSET_HOURS=-5         # default America/Lima (Barranco, UTEC); no DST

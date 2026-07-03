@@ -43,4 +43,13 @@ def get_current_user(
     user = db.query(User).filter(User.username == username).first()
     if user is None:
         raise credentials_exc
+    # Immediate revocation: a user deactivated mid-session must not keep working
+    # until the token expires. 401 (not 403) so the frontend's interceptor runs
+    # its session-expiry flow and logs the account out.
+    if user.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account is not active.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return user
