@@ -46,3 +46,27 @@ ml_pipeline/data/
 
 # Seed dataset output (generated — run seed_data/generate_dataset.py to reproduce)
 seed_data/output/
+
+# LaTeX build artifacts (informe.pdf is kept as the deliverable)
+informe/*.aux
+informe/*.log
+informe/*.out
+informe/*.toc
+informe/*.lof
+informe/*.lot
+informe/*.bbl
+informe/*.blg
+informe/*.bcf
+informe/*.run.xml
+informe/*.fls
+informe/*.fdb_latexmk
+informe/*.synctex.gz
+informe/*.synctex
+informe/*.nav
+informe/*.snm
+informe/*.vrb
+informe/*.xdv
+informe/*.idx
+informe/*.ind
+informe/*.ilg
+informe/*.auxlock
