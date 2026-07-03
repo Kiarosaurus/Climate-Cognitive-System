@@ -16,6 +16,9 @@
    - 3.5 [Inputs Numéricos Fluidos y UI Minimalista](#35-inputs-numéricos-fluidos-y-ui-minimalista)
    - 3.6 [Fijación de Destellos en Gráficos de Rentabilidad](#36-fijación-de-destellos-en-gráficos-de-rentabilidad)
    - 3.7 [Ocupación Esperada vs. Real (Feed-Forward + Feedback)](#37-ocupación-esperada-vs-real-feed-forward--feedback)
+   - 3.8 [Dataset Sembrado UTEC (seed_data)](#38-dataset-sembrado-utec-seed_data)
+   - 3.9 [Driver Climático Exógeno y Modelo ML que Supera al Baseline (Tier 2)](#39-driver-climático-exógeno-y-modelo-ml-que-supera-al-baseline-tier-2)
+   - 3.10 [Metadata Física por Aula (Tier 3)](#310-metadata-física-por-aula-tier-3)
 4. [Hitos del Proyecto y Hoja de Ruta](#4-hitos-del-proyecto-y-hoja-de-ruta)
 5. [Arquitectura Tecnológica](#5-arquitectura-tecnológica)
 6. [Endpoints API](#6-endpoints-api)
@@ -91,6 +94,10 @@ Climate-Cognitive-System/
 │   ├── extract_data.py
 │   ├── train_model.py
 │   └── data/
+├── seed_data/
+│   ├── generate_dataset.py
+│   ├── README.md
+│   └── output/            # (generado, no versionado)
 ├── docker-compose.yml
 ├── generate_openapi.py
 ├── openapi_watson.json
@@ -111,7 +118,7 @@ Climate-Cognitive-System/
 | `app/core/security.py` | **Seguridad** | `hash_password` / `verify_password` con **Argon2** vía `pwdlib`, `create_access_token` / `decode_token` JWT (`python-jose`) |
 | `app/models/` | **Modelos** | `admin.py` (ORM SQLAlchemy: `User`, `Room`, `SensorDevice`, `Reservation`, `Schedule`); `sensor.py` (esquema Pydantic `SensorReading`) |
 | `app/routes/` | **Endpoints REST** | `auth.py` (login/register), `admin.py` (CRUD de aulas/sensores/usuarios/reservas), `sensors.py` (ingesta + control físico + emergencias), `reports.py` (ROI), `chat.py` (proxy Watson) |
-| `app/services/` | **Lógica de dominio** | `data_service.py` (pipeline de ingesta), `predictive_service.py` (ML + heurístico + blend feed-forward/feedback), `occupancy_service.py` (estimación de ocupación real vía CO₂ + gap plan-vs-real), `watson_service.py` (cliente Watson) |
+| `app/services/` | **Lógica de dominio** | `data_service.py` (pipeline de ingesta), `predictive_service.py` (ML + heurístico + blend feed-forward/feedback), `occupancy_service.py` (estimación de ocupación real vía CO₂ + gap plan-vs-real), `climate_service.py` (temperatura exterior de Lima por mes/hora — driver exógeno, sin HW), `room_profile.py` (metadata física por aula: piso, volumen, BTU — features del modelo, sin HW), `watson_service.py` (cliente Watson) |
 | `app/ml/` | **Artefactos ML** | `model.joblib` (modelo serializado, generado por `ml_pipeline/`) |
 
 ### 2.2 `frontend/` — Capa de presentación React
@@ -147,11 +154,21 @@ Climate-Cognitive-System/
 
 | Archivo | Propósito |
 |---|---|
-| `extract_data.py` | Exporta lecturas históricas de MongoDB a CSV (`data/`). Deriva `actual_occupancy` desde `co2_ppm` (mass-balance) y conserva `expected_occupancy` (plan) como columnas **distintas** |
-| `train_model.py` | Entrena un regresor `scikit-learn` sobre las features `[temperature, hour_of_day, expected_occupancy, actual_occupancy]` y serializa el resultado vía `joblib` en `backend/app/ml/model.joblib`. El **orden** de features debe coincidir con el vector construido en `predictive_service.py` |
-| `data/` | Datasets de entrenamiento / validación |
+| `extract_data.py` | Exporta lecturas históricas de MongoDB a CSV (`data/`). Lee el `expected_occupancy` **real** del `cognitive_action`, deriva `actual_occupancy` desde `co2_ppm` (mass-balance), lee/deriva `outdoor_temp` (clima Lima), adjunta **metadata física por aula** (`floor, volume_m3, ac_btu` desde `room_profile`) y escribe las filas en **orden cronológico**. El target combina carga de ocupación + carga climática exógena × factor térmico por room |
+| `train_model.py` | Entrena `HistGradientBoostingRegressor` con **early stopping** sobre `[temperature, hour_of_day, expected_occupancy, actual_occupancy, outdoor_temp, floor, volume_m3, ac_btu]`, usa **holdout cronológico** (último 20 %) y reporta **baselines** (media + heurística **solo-ocupación**). Serializa un **bundle** `{model, features, room_id_map, metadata}` vía `joblib` en `backend/app/ml/model.joblib` |
+| `data/` | Datasets de entrenamiento / validación + `room_map.json` |
 
-> ⚠️ **Contrato de features:** el orden y nombres de `FEATURES` en `train_model.py` deben ser idénticos al vector `np.array([[current_temp, hour, expected_occupancy, actual_occupancy]])` de `predictive_service.calculate_cooling_demand`. Un desajuste produce inferencias silenciosamente incorrectas.
+### 2.6 `seed_data/` — Dataset sembrado (UTEC Barranco)
+
+| Archivo | Propósito |
+|---|---|
+| `generate_dataset.py` | Genera ~2 meses de historial realista (rooms, horarios, sensores, reservas futuras + lecturas) e inserta en **Mongo + PostgreSQL** |
+| `README.md` | Uso, ventana temporal y modelo de asistencia |
+| `output/` | (dry-run) `sensor_readings.json` + `catalog.json` — reproducible, no versionado |
+
+Ver sección [3.8](#38-dataset-sembrado-utec-seed_data) para el detalle del modelo de asistencia.
+
+> ⚠️ **Contrato de features:** el modelo se guarda como **bundle** con la lista `features`. `predictive_service.py` lee `bundle["features"]` y arma la fila de inferencia en ese orden (mapa `feat → valor`), así reordenar/agregar features no rompe la inferencia en silencio. El `room_id_map` traduce `room_id → room_code`; un room desconocido en inferencia usa código `-1`. Formato legacy (estimador desnudo) aún soportado con el orden por defecto de 4 features.
 
 ### 2.5 Archivos raíz adicionales
 
@@ -551,6 +568,159 @@ Cada `cognitive_action` persistida en MongoDB ahora incluye telemetría de ocupa
 
 ---
 
+### 3.8 Dataset Sembrado UTEC (seed_data)
+
+**Propósito:** Poblar las bases de datos con un historial **realista y reproducible** del campus UTEC Barranco (Lima), sin depender de hardware físico, para demos y para alimentar el pipeline de ML.
+
+**Alcance** (`seed_data/generate_dataset.py`):
+
+- **Ventana:** Lun 2026-05-18 → Dom 2026-07-05 (~2 meses).
+- **6 rooms** (A403, M601, M604, M1001, M802, M602), A/C `target_temp = 20 °C`, sensor `s-<room>`.
+- **Horarios semanales** (`Schedule`) con la reserva como `expected_people`.
+- **Lecturas** (`sensor_readings`) cada 10 min por sesión + 30 min de warm-up (aula vacía).
+- **Reservas futuras** (post 5-jul) en la tabla `Reservation`, con usuario `profesor_utec`.
+
+**Modelo de asistencia — decremento lineal NO monótono:**
+
+```python
+# Piso base: decae linealmente del "inicio" al "actual" por (room, weekday)
+floor = f_start + (f_end - f_start) * progress
+
+# Bump reproducible: sube +1 o +2 en algunos días → la curva no es monótona
+r = random.Random(f"{room_id}:{d.isoformat()}:{ATTENDANCE_SEED}")
+people = floor + r.choice([0, 1, 2])
+```
+
+- El `random.Random` **keyed por (room, fecha, seed)** garantiza reproducibilidad **independiente del orden de iteración**.
+- Fechas especiales (`SPECIAL`) sobreescriben con el conteo exacto (ej. M1001 33 personas).
+- El `co2_ppm` se **deriva** de la asistencia real (mass-balance) → el `occupancy_gap` queda físicamente coherente (ver sección 3.7).
+- **Clima Lima invierno:** frío, húmedo (garúa); indoor cerca de 20 °C.
+
+**Cómo poblar** (con las DB arriba, puertos en `localhost`):
+
+```bash
+python seed_data/generate_dataset.py --dry-run   # solo JSON en output/, sin tocar DB
+python seed_data/generate_dataset.py --wipe      # limpia sensor_readings e inserta
+```
+
+> ✅ **Uso con ml_pipeline:** los `sensor_readings` sembrados llevan el plan real en
+> `cognitive_action.expected_occupancy` (que `extract_data.py` lee, D1) y el
+> `outdoor_temp` exógeno. Ver sección 3.9 para cómo esto permite que el modelo supere
+> al baseline heurístico.
+
+---
+
+### 3.9 Driver Climático Exógeno y Modelo ML que Supera al Baseline (Tier 2)
+
+**Contexto y restricción:** El proyecto se desarrolla **sin hardware de A/C real ni
+red multi-sensor** (un solo sensor funcional que detecta datos). Por tanto no existe
+"feedback real del A/C" del cual derivar etiquetas. El objetivo de este tier no es un
+modelo de producción, sino uno **coherente y con sentido**: que responda a ocupación,
+clima y aula de forma físicamente plausible, y que **justifique el uso de ML** superando
+a la heurística.
+
+**Problema (circularidad D2):** En el tier anterior el target era `actual × 0.05`, es
+decir **exactamente** la heurística de ocupación. El modelo sólo podía imitarla — nunca
+superarla (`beats_baselines: false`). Un R² alto era ilusorio: reflejaba la circularidad
+`co2 → actual_occupancy → target`, con `actual_occupancy` como feature.
+
+**Solución — introducir señal EXÓGENA que la heurística no ve:**
+
+#### 3.9.1 Temperatura exterior determinística (`climate_service.py`)
+
+Sin API meteorológica ni HW, se modela la temperatura exterior de Lima analíticamente:
+
+```python
+outdoor_temp(ts) = media_mensual[mes] + amplitud · cos(2π · (hora − 14) / 24)
+```
+
+- **Reproducible:** el mismo timestamp siempre da la misma temperatura.
+- **Costa de Lima:** medias mensuales (invierno ~17 °C, verano ~24 °C), amplitud diurna baja (~3 °C) por el efecto oceánico.
+- **Fuente única:** tanto `seed_data/generate_dataset.py` como `predictive_service.py` importan este módulo — el supuesto climático se define en un solo lugar.
+
+#### 3.9.2 Target no-circular
+
+El `target_temp_offset` combina tres términos, dos de ellos **invisibles** para la heurística:
+
+```python
+people_load  = actual_occupancy * 0.05 * hour_weight          # heurística ve esto
+climate_load = max(0, outdoor_temp - 18) * 0.06               # EXÓGENO (Tier 2)
+room_factor  = ROOM_THERMAL[room_id]                          # masa térmica por aula
+target = (people_load + climate_load) * room_factor + ruido
+```
+
+`ROOM_THERMAL` asigna mayor carga a pisos altos (M1001 = 1.20, M802 = 1.10) y menor a
+labs bajos (M602 = 0.90) — proxy de ganancia solar/techo.
+
+#### 3.9.3 Baseline honesto y resultado
+
+El baseline heurístico en `train_model.py` es **deliberadamente ciego** a `outdoor_temp`
+y `room_code` (sólo ocupación). Así el modelo puede ganar legítimamente:
+
+| Métrica (holdout cronológico) | Valor |
+|---|---|
+| RMSE modelo | ~0.098 °C |
+| RMSE baseline heurístico (solo ocupación) | ~0.142 °C |
+| RMSE baseline media | ~0.53 °C |
+| `beats_baselines` | **true** |
+
+Features de inferencia (orden del bundle): `[temperature, hour_of_day,
+expected_occupancy, actual_occupancy, room_code, outdoor_temp]`. En inferencia,
+`outdoor_temp` se calcula con `climate_service` desde el timestamp de la lectura.
+
+> ⚠️ **Limitaciones honestas** (coherencia > optimalidad, dado el alcance):
+> - El target sigue siendo **sintético**; el modelo supera a la heurística porque usa
+>   drivers que ésta ignora, no porque aprenda física real de A/C.
+> - En la ventana sembrada (invierno de Lima, exterior < baseline gran parte del tiempo)
+>   la **ocupación domina**; `outdoor_temp` y `room_code` aportan señal menor
+>   (importancia por permutación baja). La diversidad estacional vive sobre todo en las
+>   filas sintéticas de augmentación.
+> - Reemplazar el target sintético por **feedback real del A/C** sigue pendiente
+>   y es el único camino a mejoras de calidad genuinas.
+
+---
+
+### 3.10 Metadata Física por Aula (Tier 3)
+
+**Contexto y restricción:** Igual que Tier 2 — **sin hardware nuevo ni multi-sensor**.
+El objetivo es enriquecer el modelo con drivers físicos reales, manteniendo coherencia.
+
+**Problema que resuelve:** En Tier 2 el aula entraba al modelo como `room_code`, un
+entero **opaco** con importancia por permutación ≈ 0: el modelo no lograba explotar las
+diferencias térmicas entre aulas. Un código arbitrario no le dice al regresor *por qué*
+un aula calienta más.
+
+**Solución (`room_profile.py`):** Se reemplaza `room_code` por **metadata física
+estática** que sí explica el comportamiento térmico:
+
+| Feature | Significado | Efecto térmico |
+|---|---|---|
+| `floor` | Piso del edificio | Pisos altos (M1001=10, M802=8) → más ganancia por techo/sol |
+| `volume_m3` | Volumen interior de aire | Masa térmica |
+| `ac_btu` | Capacidad nominal del A/C | Potencia de enfriamiento disponible |
+
+- **Sin train/serve skew:** la metadata es estática por aula → disponible idéntica en
+  entrenamiento (por `room_id`) e inferencia (`room_profile.get_metadata`).
+- **Fuente única:** `seed_data`, `extract_data.py` y `predictive_service.py` importan
+  `room_profile`; el `thermal_factor` del target y las features de metadata salen del
+  mismo módulo, así el modelo **puede recuperar** el factor desde la metadata.
+
+**Por qué NO se añadieron lag features (`dT/dt`, temp previa):** requerirían historial
+por sensor en inferencia (lookup a Mongo por lectura) → riesgo de **train/serve skew** con
+un solo sensor. Se descartaron deliberadamente para mantener la inferencia limpia y sin
+estado. Quedan como trabajo futuro si se añade un buffer de historial.
+
+**Resultado:** `beats_baselines: true` se mantiene (RMSE modelo ~0.097 vs heurística
+~0.142). `floor` pasa a tener importancia no nula (vs `room_code` ≈ 0 en Tier 2).
+
+> ⚠️ **Limitación honesta:** la **ocupación sigue dominando** la magnitud del target, así
+> que la separación entre aulas por metadata es **modesta** (offsets muy parecidos entre
+> M1001 y M602). La metadata es físicamente correcta y disponible, pero su peso relativo
+> es bajo mientras el target siga siendo sintético y ocupación-dominado. Feedback real del
+> A/C (roadmap) es lo único que cambiaría ese balance.
+
+---
+
 ## 4. Hitos del Proyecto y Hoja de Ruta
 
 ### Infraestructura
@@ -585,6 +755,10 @@ Cada `cognitive_action` persistida en MongoDB ahora incluye telemetría de ocupa
 - [x] ML Pipeline con `scikit-learn` — entrenamiento, validación y serialización `joblib`
 - [x] Heurístico de bootstrap como **fallback** cuando `model.joblib` no existe (`personas × 0.05` °C de carga térmica)
 - [x] **Ocupación real vs. esperada** — estimación de `actual_occupancy` desde CO₂ (`occupancy_service.py`) + mezcla feed-forward/feedback (`FEEDBACK_WEIGHT`) + `occupancy_gap` persistido (sección 3.7)
+- [x] **Dataset sembrado UTEC** — historial reproducible de 2 meses con decremento lineal no-monótono + gap coherente (`seed_data/`, sección 3.8)
+- [x] **Hardening del ML pipeline (Tier 1)** — `expected_occupancy` real desde `cognitive_action` (D1), feature `room_code` (D5), **holdout cronológico** (D3), **baselines** media/heurística (D4), **bundle** con metadata/`sha256`/métricas (D6), **early stopping** (D7)
+- [x] **Driver climático exógeno + modelo que supera baseline (Tier 2)** — `climate_service.py` (temperatura exterior Lima determinística), feature `outdoor_temp`, factor térmico por room, target no-circular → `beats_baselines: true` (sección 3.9)
+- [x] **Metadata física por aula (Tier 3)** — `room_profile.py` reemplaza `room_code` opaco por `floor`/`volume_m3`/`ac_btu`; fuente única del `thermal_factor`; sin train/serve skew (sección 3.10)
 - [x] Persistencia de `cognitive_action` en MongoDB junto a cada lectura — campos: `ac_status` (`ON` / `STANDBY` / `DISABLED`), `target`, `model_used` (`ml` / `heuristic`)
 - [x] Integración **IBM Watson Assistant** vía proxy `/api/v1/chat/` (custom extension con OpenAPI publicado en `openapi_watson.json`)
 - [x] Motor de cálculo de **ROI energético** (`/reports/roi`): 7 días, kWh ahorrado, CO₂ evitado (kg), valor monetario (USD)
@@ -618,6 +792,10 @@ Cada `cognitive_action` persistida en MongoDB ahora incluye telemetría de ocupa
 - [ ] Configuración de **túneles Ngrok persistentes** para Watson Extension (custom extension en producción)
 - [ ] Notificaciones por correo al aprobar/rechazar usuarios pendientes
 - [ ] Pipeline de **reentrenamiento automático** del modelo ML con datos reales (job programado leyendo de MongoDB)
+- [ ] Reemplazar el `target_temp_offset` **sintético** por **feedback real del A/C** — único camino a mejoras de calidad genuinas (Tier 3)
+- [ ] Sustituir el `climate_service` determinístico por una **API meteorológica real** cuando haya conectividad
+- [ ] **Lag features** (`dT/dt`, temp previa) — requieren buffer de historial por sensor en inferencia para evitar train/serve skew
+- [ ] Orientación solar por aula como feature adicional (`room_profile` ya guarda `orientation`)
 - [ ] Exportación de reportes ROI a **PDF**
 - [ ] Tests de integración — `pytest + httpx` para backend, **Playwright** para frontend
 - [ ] TTL nativa de MongoDB (`expireAfterSeconds`) como segunda línea de defensa además del purge lazy actual
