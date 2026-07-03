@@ -92,3 +92,60 @@ def test_sensor_ingest_validates_payload_when_key_matches(monkeypatch):
     # Correct key but empty body → schema validation fires (422), no DB touched.
     res = client.post("/api/v1/sensors/", json={}, headers={"X-API-Key": "expected-key"})
     assert res.status_code == 422
+
+
+# ── Chat: JWT passthrough to Watson actions ───────────────────────────────────
+
+@pytest.fixture
+def watson_capture(monkeypatch):
+    """Stub Watson and capture the skill_variables the route forwards."""
+    from app.services import watson_service
+    captured: dict = {}
+
+    async def fake_create_session():
+        return "sess-test"
+
+    async def fake_send_message(session_id, text, skill_variables=None):
+        captured["session_id"] = session_id
+        captured["skill_variables"] = skill_variables
+        return "ok"
+
+    monkeypatch.setattr(watson_service, "create_session", fake_create_session)
+    monkeypatch.setattr(watson_service, "send_message", fake_send_message)
+    return captured
+
+
+def test_chat_forwards_identity_from_valid_jwt(watson_capture):
+    from app.core.security import create_access_token
+    token = create_access_token({"sub": "kiara", "role": "collaborator"})
+    res = client.post(
+        "/api/v1/chat/",
+        json={"message": "hola"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 200
+    vars_ = watson_capture["skill_variables"]
+    assert vars_["jwt"] == token
+    assert vars_["user_role"] == "collaborator"
+    assert vars_["username"] == "kiara"
+
+
+def test_chat_without_token_is_anonymous_but_works(watson_capture):
+    res = client.post("/api/v1/chat/", json={"message": "hola"})
+    assert res.status_code == 200
+    vars_ = watson_capture["skill_variables"]
+    assert vars_ == {"jwt": "", "user_role": "anonymous", "username": ""}
+
+
+def test_chat_forwards_undecodable_token_as_anonymous(watson_capture):
+    # Garbage token: identity falls back to anonymous but the opaque token is
+    # still forwarded — protected endpoints are the ones that must reject it.
+    res = client.post(
+        "/api/v1/chat/",
+        json={"message": "hola"},
+        headers={"Authorization": "Bearer not-a-jwt"},
+    )
+    assert res.status_code == 200
+    vars_ = watson_capture["skill_variables"]
+    assert vars_["jwt"] == "not-a-jwt"
+    assert vars_["user_role"] == "anonymous"

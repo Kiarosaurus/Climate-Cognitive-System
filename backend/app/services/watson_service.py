@@ -37,13 +37,24 @@ def _create_session_sync() -> str:
     return result["session_id"]
 
 
-def _send_message_sync(session_id: str, text: str) -> str:
+def _send_message_sync(session_id: str, text: str, skill_variables: dict | None = None) -> str:
+    kwargs: dict = {}
+    if skill_variables:
+        # Actions read these as session variables (must exist with the SAME
+        # names in the actions skill). This is how the logged-in user's JWT
+        # reaches extension callouts: the action binds the Authorization
+        # header to the `jwt` variable, and the backend then enforces the
+        # exact same RBAC as the web UI — Watson adds no authority of its own.
+        kwargs["context"] = {
+            "skills": {"actions skill": {"skill_variables": skill_variables}}
+        }
     response = _client.message(
         assistant_id=WATSON_ASSISTANT_ID,
         environment_id=WATSON_ASSISTANT_ID,
         session_id=session_id,
         input={"message_type": "text", "text": text},
-        user_id="ccs_admin_local",
+        user_id=(skill_variables or {}).get("username") or "ccs_anonymous",
+        **kwargs,
     ).get_result()
 
     generics = response.get("output", {}).get("generic", [])
@@ -60,7 +71,7 @@ async def create_session() -> str:
     return await run_in_threadpool(_create_session_sync)
 
 
-async def send_message(session_id: str, text: str) -> str:
+async def send_message(session_id: str, text: str, skill_variables: dict | None = None) -> str:
     if _client is None:
         raise RuntimeError("Watson client not initialized. Check Watson env vars.")
-    return await run_in_threadpool(_send_message_sync, session_id, text)
+    return await run_in_threadpool(_send_message_sync, session_id, text, skill_variables)

@@ -141,6 +141,17 @@
           {
             "OAuth2PasswordBearer": []
           }
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
         ]
       }
     },
@@ -167,6 +178,15 @@
             "schema": {
               "type": "string",
               "title": "Sensor Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -223,6 +243,17 @@
           {
             "OAuth2PasswordBearer": []
           }
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
         ]
       },
       "post": {
@@ -265,6 +296,17 @@
           {
             "OAuth2PasswordBearer": []
           }
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
         ]
       }
     },
@@ -289,6 +331,15 @@
             "schema": {
               "type": "string",
               "title": "Room Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -336,6 +387,15 @@
               "type": "string",
               "title": "Room Id"
             }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -380,6 +440,15 @@
             "schema": {
               "type": "string",
               "title": "Room Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -445,6 +514,15 @@
               "default": true,
               "title": "Cascade Reservations"
             }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -499,6 +577,15 @@
               "type": "string",
               "title": "Room Id"
             }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -544,6 +631,15 @@
             "schema": {
               "type": "string",
               "title": "Room Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -601,6 +697,17 @@
           {
             "OAuth2PasswordBearer": []
           }
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
         ]
       }
     },
@@ -625,6 +732,15 @@
             "schema": {
               "type": "string",
               "title": "Sensor Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -679,6 +795,15 @@
             "schema": {
               "type": "string",
               "title": "Sensor Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -745,6 +870,17 @@
           {
             "OAuth2PasswordBearer": []
           }
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
         ]
       }
     },
@@ -768,6 +904,17 @@
         "security": [
           {
             "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ]
       },
@@ -810,6 +957,17 @@
         "security": [
           {
             "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ]
       }
@@ -856,6 +1014,17 @@
           {
             "OAuth2PasswordBearer": []
           }
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
         ]
       }
     },
@@ -879,6 +1048,17 @@
         "security": [
           {
             "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ]
       }
@@ -904,6 +1084,15 @@
             "schema": {
               "type": "integer",
               "title": "User Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -960,6 +1149,17 @@
           {
             "OAuth2PasswordBearer": []
           }
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
         ]
       },
       "post": {
@@ -1002,6 +1202,17 @@
           {
             "OAuth2PasswordBearer": []
           }
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
         ]
       }
     },
@@ -1026,6 +1237,15 @@
             "schema": {
               "type": "integer",
               "title": "Reservation Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1069,6 +1289,15 @@
             "schema": {
               "type": "integer",
               "title": "Reservation Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1126,6 +1355,15 @@
               "type": "string",
               "title": "Room Id"
             }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1170,6 +1408,17 @@
         "security": [
           {
             "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer JWT del usuario. En Watson: 'Bearer ' + session variable jwt (la llena POST /chat con el token del widget).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ]
       }
@@ -1259,15 +1508,32 @@
         ],
         "summary": "Chat",
         "operationId": "chat_api_v1_chat__post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Authorization",
+              "nullable": true
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ChatRequest"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -1290,12 +1556,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "APIKeyHeader": []
-          }
-        ]
+        }
       }
     },
     "/health": {
@@ -1700,6 +1961,12 @@
             "title": "Co Ppm",
             "description": "Carbon monoxide concentration in ppm (MQ7 sensor)",
             "default": 0.0
+          },
+          "camera_occupancy": {
+            "type": "integer",
+            "title": "Camera Occupancy",
+            "description": "Current headcount measured by the sensor node's camera (MediaPipe line-crossing count). Persisted alongside the CO2-derived actual_occupancy to validate/calibrate the mass-balance proxy. Not a model feature; None when the node has no camera.",
+            "nullable": true
           },
           "is_simulated": {
             "type": "boolean",

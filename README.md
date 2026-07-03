@@ -391,7 +391,7 @@ python ml_pipeline/train_model.py     # → backend/app/ml/model.joblib
 | GET    | `/api/v1/sensors/`                    | API key                      | List recent readings (filter by room/sensor)  |
 | GET    | `/api/v1/sensors/emergencies`         | API key + JWT (admin/collab) | Real-time CO alerts                           |
 | PUT    | `/api/v1/sensors/{id}/control`        | API key + JWT (no guests; collaborator needs an active reservation) | Toggle device active / control-enabled |
-| POST   | `/api/v1/chat/`                       | API key                      | Watson Assistant conversation                  |
+| POST   | `/api/v1/chat/`                       | API key (+ optional JWT, forwarded to Watson actions as session variables) | Watson Assistant conversation |
 | GET    | `/api/v1/reports/roi`                 | JWT (admin)                  | ROI / energy-savings report                   |
 | *      | `/api/v1/admin/...`                   | JWT (admin; reservations & timeline also collaborator) | Manage users, rooms, schedules, reservations |
 

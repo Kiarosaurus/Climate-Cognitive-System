@@ -151,6 +151,42 @@ def inject_missing_parameters(spec: dict) -> dict:
             
     return spec
 
+# ── Authorization header for Watson actions (JWT passthrough) ────────────────
+
+def inject_authorization_header(spec: dict) -> dict:
+    """Expose the Bearer JWT as an EXPLICIT header parameter on every
+    JWT-protected operation.
+
+    Watson's extension auth is a static X-API-Key; it cannot carry a per-user
+    token. Actions instead bind this header to the `jwt` session variable
+    (populated by POST /chat from the logged-in widget user), so CRUD callouts
+    reach the API as that user and the backend enforces its normal RBAC.
+    FastAPI only advertises the scheme in `security` — Watson can't bind that,
+    hence the explicit parameter. Idempotent across re-runs.
+    """
+    for path, methods in spec.get("paths", {}).items():
+        for method, op in methods.items():
+            if not isinstance(op, dict):
+                continue
+            needs_jwt = any("OAuth2PasswordBearer" in sec for sec in op.get("security", []))
+            if not needs_jwt:
+                continue
+            params = op.setdefault("parameters", [])
+            if any(p.get("name") == "Authorization" and p.get("in") == "header" for p in params):
+                continue
+            params.append({
+                "name": "Authorization",
+                "in": "header",
+                "description": (
+                    "Bearer JWT del usuario. En Watson: 'Bearer ' + session "
+                    "variable jwt (la llena POST /chat con el token del widget)."
+                ),
+                "required": False,
+                "schema": {"type": "string"},
+            })
+    return spec
+
+
 # ── main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -181,6 +217,7 @@ def main():
     
     # Aplicamos la inyección de los parámetros faltantes
     spec = inject_missing_parameters(spec)
+    spec = inject_authorization_header(spec)
 
     spec["servers"] = [{"url": args.server}]
     print(f"  Server URL       : {args.server}")

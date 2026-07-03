@@ -929,7 +929,7 @@ at train and serve time, not that it moves this synthetic target.
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/v1/chat/` | Send a message to Watson Assistant |
+| `POST` | `/api/v1/chat/` | Send a message to Watson Assistant. Forwards the caller's optional Bearer JWT to Watson as actions session variables (`jwt`, `user_role`, `username`) so extension callouts execute as that user — RBAC stays enforced by the API, never by Watson |
 
 ---
 
