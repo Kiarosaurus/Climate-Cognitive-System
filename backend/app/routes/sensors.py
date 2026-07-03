@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
+from app.config import LOCAL_UTC_OFFSET_HOURS
 from app.models.sensor import SensorReading
 from app.models.admin import SensorDevice, Reservation, User, Room
 from app.services.data_service import process_reading
@@ -200,7 +201,13 @@ def control_sensor(
 
     # collaborators need an active reservation on this room
     if current_user.role == "collaborator":
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        # Reservations are stored in LOCAL wall-clock time (same convention as
+        # schedules) — shift the UTC clock into local before the window check,
+        # otherwise a 17-18h Lima reservation only "works" at 12-13h.
+        now = (
+            datetime.now(timezone.utc).replace(tzinfo=None)
+            + timedelta(hours=LOCAL_UTC_OFFSET_HOURS)
+        )
         active = db_sql.query(Reservation).filter(
             Reservation.user_id == current_user.id,
             Reservation.room_id == device.room_id,

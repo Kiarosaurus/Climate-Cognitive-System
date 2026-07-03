@@ -35,13 +35,17 @@ DEFAULT_INTERVAL_H = 5 / 60 # fallback interval when span cannot be estimated
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _parse_ts(ts: str) -> datetime:
-    """Parse ISO timestamp string — strips tzinfo for uniform naive comparison."""
+def _parse_ts(ts: str) -> datetime | None:
+    """Parse ISO timestamp string — strips tzinfo for uniform naive comparison.
+
+    Returns None for malformed values so the caller can DISCARD the document;
+    silently mapping garbage to "now" would inflate today's bucket.
+    """
     ts = ts.replace("Z", "+00:00")
     try:
         dt = datetime.fromisoformat(ts)
     except ValueError:
-        dt = datetime.utcnow()
+        return None
     return dt.replace(tzinfo=None) if dt.tzinfo else dt
 
 
@@ -104,17 +108,27 @@ async def get_roi(
         raise HTTPException(status_code=403, detail="Admin role required.")
 
     # ── Fetch last 7 days from MongoDB ────────────────────────────────────────
-    since_iso = (datetime.utcnow() - timedelta(days=7)).isoformat()
+    # Upper bound matters: the seeded dataset extends past today, and without it
+    # future-dated readings would inflate the "last 7 days" report.
+    now_utc = datetime.utcnow()
+    since_iso = (now_utc - timedelta(days=7)).isoformat()
+    now_iso = now_utc.isoformat()
 
     cursor = (
         db["sensor_readings"]
         .find(
-            {"timestamp": {"$gte": since_iso}},
+            {"timestamp": {"$gte": since_iso, "$lte": now_iso}},
             {"timestamp": 1, "cognitive_action": 1, "_id": 0},
         )
         .sort("timestamp", 1)
     )
     docs = await cursor.to_list(length=50_000)
+
+    # Discard documents whose timestamp cannot be parsed (see _parse_ts).
+    valid_docs = [d for d in docs if _parse_ts(d.get("timestamp", "")) is not None]
+    if len(valid_docs) != len(docs):
+        logger.warning("ROI: discarded %d readings with malformed timestamps.", len(docs) - len(valid_docs))
+    docs = valid_docs
 
     if len(docs) < 2:
         logger.info("ROI: insufficient data (%d readings) — returning simulation.", len(docs))
@@ -123,7 +137,11 @@ async def get_roi(
     # ── Estimate per-reading interval ─────────────────────────────────────────
     ts_first  = _parse_ts(docs[0]["timestamp"])
     ts_last   = _parse_ts(docs[-1]["timestamp"])
-    span_h    = max((ts_last - ts_first).total_seconds() / 3600, 0.0)
+    # Both are non-None here (docs were filtered above); guard for the type checker.
+    span_h    = (
+        max((ts_last - ts_first).total_seconds() / 3600, 0.0)
+        if ts_first is not None and ts_last is not None else 0.0
+    )
     n         = len(docs)
     interval_h = (span_h / (n - 1)) if span_h > 0 else DEFAULT_INTERVAL_H
 

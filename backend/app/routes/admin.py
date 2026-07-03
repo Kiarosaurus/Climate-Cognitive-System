@@ -644,6 +644,22 @@ def create_reservation(
     if end <= start:
         raise HTTPException(status_code=400, detail="end_time must be after start_time.")
 
+    # No overlapping reservations per room: [start, end) must not intersect an
+    # existing window, or two users would hold "the active reservation" at once.
+    overlap = db.query(Reservation).filter(
+        Reservation.room_id == payload.room_id,
+        Reservation.start_time < end,
+        Reservation.end_time > start,
+    ).first()
+    if overlap:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Room '{payload.room_id}' already has a reservation overlapping "
+                f"{start.isoformat()} – {end.isoformat()} (reservation id={overlap.id})."
+            ),
+        )
+
     reservation = Reservation(
         room_id=payload.room_id,
         user_id=current_user.id,
@@ -717,6 +733,22 @@ def update_reservation(
 
     if end <= start:
         raise HTTPException(status_code=400, detail="end_time must be after start_time.")
+
+    # Same no-overlap rule as creation, excluding the reservation being edited.
+    overlap = db.query(Reservation).filter(
+        Reservation.id != reservation_id,
+        Reservation.room_id == payload.room_id,
+        Reservation.start_time < end,
+        Reservation.end_time > start,
+    ).first()
+    if overlap:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Room '{payload.room_id}' already has a reservation overlapping "
+                f"{start.isoformat()} – {end.isoformat()} (reservation id={overlap.id})."
+            ),
+        )
 
     reservation.room_id = payload.room_id
     reservation.start_time = start
@@ -801,9 +833,11 @@ def _compute_past_ac_state(events: list) -> tuple[str, Optional[float]]:
 
 
 def _timeline_expected_people(schedules: list, anchor: datetime) -> int:
-    naive = anchor.replace(tzinfo=None)
-    dow = naive.weekday()
-    hhmm = naive.time()
+    # Schedules are stored in LOCAL wall-clock time; the anchor is UTC. Shift the
+    # FULL datetime — the weekday changes too (Tue 20:00 Lima == Wed 01:00 UTC).
+    local = anchor.replace(tzinfo=None) + timedelta(hours=_LOCAL_UTC_OFFSET_HOURS)
+    dow = local.weekday()
+    hhmm = local.time()
     for s in schedules:
         if s.day_of_week == dow and s.start_time <= hhmm <= s.end_time:
             return s.expected_people
@@ -811,8 +845,10 @@ def _timeline_expected_people(schedules: list, anchor: datetime) -> int:
 
 
 def _timeline_reservation_for(reservations: list, anchor_naive: datetime) -> Optional[dict]:
+    # Reservations are stored in LOCAL wall-clock time; anchor_naive is naive UTC.
+    local = anchor_naive + timedelta(hours=_LOCAL_UTC_OFFSET_HOURS)
     for r in reservations:
-        if r.start_time <= anchor_naive < r.end_time:
+        if r.start_time <= local < r.end_time:
             return {
                 "id": r.id,
                 "username": r.user.username if r.user else None,

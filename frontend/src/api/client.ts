@@ -19,7 +19,10 @@ api.interceptors.response.use(
   err => {
     const url: string = err.config?.url ?? ''
     const status: number = err.response?.status
-    const isAuthError = (status === 401 || status === 403) && !url.includes('/auth/login')
+    // 401 = authentication (expired/invalid token) → session-expiry flow.
+    // 403 = authorization (role or reservation denied) → NOT an expired session:
+    // it must reach the caller's catch so the real message is shown to the user.
+    const isAuthError = status === 401 && !url.includes('/auth/login')
     if (isAuthError) {
       if (authHandlers.onSessionExpired) {
         authHandlers.onSessionExpired()
