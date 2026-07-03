@@ -890,14 +890,18 @@ async def get_room_timeline(
         if room is None:
             return None, [], [], []
         sensor_ids = [d.id for d in db_sql.query(SensorDevice).filter(SensorDevice.room_id == room_id).all()]
-        start_naive = start.replace(tzinfo=None)
-        end_naive = end.replace(tzinfo=None)
+        # Reservations are stored in LOCAL wall-clock time — shift the UTC window
+        # bounds to local before prefiltering (see app.core.timeutils), otherwise
+        # reservations in the earliest |offset| hours of the window are dropped
+        # before _timeline_reservation_for ever sees them.
+        start_local = to_local(start)
+        end_local = to_local(end)
         reservations = (
             db_sql.query(Reservation)
             .filter(
                 Reservation.room_id == room_id,
-                Reservation.start_time < end_naive,
-                Reservation.end_time > start_naive,
+                Reservation.start_time < end_local,
+                Reservation.end_time > start_local,
             )
             .all()
         )

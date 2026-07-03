@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, RefreshCw, AlertCircle, CheckCircle, XCircle, Cpu } from 'lucide-react'
-import api from '../api/client'
+import api, { getApiErrorDetail } from '../api/client'
 import { EmptyState } from '../components/EmptyState'
 
 interface SensorDevice {
@@ -30,7 +30,7 @@ export default function SensorSearch() {
     setError(null)
     api.get<SensorDevice[]>('/admin/devices')
       .then(res => setSensors(res.data))
-      .catch(err => setError(err?.response?.data?.detail ?? 'Error cargando sensores.'))
+      .catch(err => setError(getApiErrorDetail(err) ?? 'Error cargando sensores.'))
       .finally(() => { setLoading(false); setRefreshing(false) })
   }
 

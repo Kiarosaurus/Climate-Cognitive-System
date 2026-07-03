@@ -4,7 +4,7 @@ import {
   Search, Building2, Users, Thermometer,
   RefreshCw, AlertCircle, Zap, ZapOff, HelpCircle,
 } from 'lucide-react'
-import api from '../api/client'
+import api, { getApiErrorDetail } from '../api/client'
 import { EmptyState } from '../components/EmptyState'
 
 interface Room {
@@ -104,7 +104,7 @@ export default function RoomSearch() {
         })
       })
       .catch(err => {
-        setError(err?.response?.data?.detail ?? 'No se pudo cargar la lista de aulas.')
+        setError(getApiErrorDetail(err) ?? 'No se pudo cargar la lista de aulas.')
       })
       .finally(() => setLoading(false))
   }, [])

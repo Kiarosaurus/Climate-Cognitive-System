@@ -317,7 +317,7 @@ export default function RoomDetail() {
         setDevices((devicesRes.data ?? []).filter(d => d.room_id === id))
         setTimeline(timelineRes.data ?? null)
       })
-      .catch(err => setError(err?.response?.data?.detail ?? 'Error cargando datos del aula.'))
+      .catch(err => setError(getApiErrorDetail(err) ?? 'Error cargando datos del aula.'))
       .finally(() => setLoading(false))
   }, [id])
 

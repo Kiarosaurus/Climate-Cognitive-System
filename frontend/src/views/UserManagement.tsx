@@ -48,7 +48,7 @@ export default function UserManagement() {
     setLoading(true)
     api.get<UserRow[]>('/admin/users')
       .then(res => { setUsers(res.data); setError(null) })
-      .catch(err => setError(err?.response?.data?.detail ?? 'Error cargando usuarios.'))
+      .catch(err => setError(getApiErrorDetail(err) ?? 'Error cargando usuarios.'))
       .finally(() => setLoading(false))
   }, [])
 

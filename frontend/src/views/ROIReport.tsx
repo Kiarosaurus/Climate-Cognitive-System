@@ -7,7 +7,7 @@ import {
   TrendingUp, Zap, Leaf, RefreshCw, AlertCircle,
   FlaskConical, Brain, Clock,
 } from 'lucide-react'
-import api from '../api/client'
+import api, { getApiErrorDetail } from '../api/client'
 
 // Average CO₂ emission factor for the electrical grid (kg CO₂ per kWh).
 // Source: EPA eGrid average; Peru's grid factor is ~0.224 — 0.233 is a conservative estimate.
@@ -101,7 +101,7 @@ export default function ROIReport() {
     setError(null)
     api.get<ROIData>('/reports/roi')
       .then(res => setData(res.data))
-      .catch(err => setError(err?.response?.data?.detail ?? 'Error calculando ROI.'))
+      .catch(err => setError(getApiErrorDetail(err) ?? 'Error calculando ROI.'))
       .finally(() => setLoading(false))
   }
 

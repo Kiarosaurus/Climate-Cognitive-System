@@ -113,7 +113,7 @@ export default function Reservations() {
   const fetchReservations = useCallback(() => {
     api.get<Reservation[]>('/admin/reservations')
       .then(res => setReservations(Array.isArray(res.data) ? res.data : []))
-      .catch(err => setError(err?.response?.data?.detail ?? 'Error cargando reservas.'))
+      .catch(err => setError(getApiErrorDetail(err) ?? 'Error cargando reservas.'))
   }, [])
 
   useEffect(() => {
@@ -128,7 +128,7 @@ export default function Reservations() {
           setForm(f => ({ ...f, room_id: String(roomsRes.data[0].id) }))
         }
       })
-      .catch(err => setError(err?.response?.data?.detail ?? 'Error cargando datos.'))
+      .catch(err => setError(getApiErrorDetail(err) ?? 'Error cargando datos.'))
       .finally(() => setLoading(false))
   }, [])
 
