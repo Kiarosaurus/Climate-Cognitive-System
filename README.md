@@ -236,9 +236,9 @@ npm run dev          # Vite dev server
 ### Environment Variables (`.env`)
 
 ```ini
-# Databases
-MONGO_URI=mongodb://mongo:27017
-POSTGRES_URI=postgresql://postgres:postgres@postgres:5432/climate_db
+# Databases — MONGO_URI / POSTGRES_URI are NOT set here: docker-compose.yml
+# injects them pointing at the `mongo` / `postgres` service names. Set them
+# only for manual/local runs outside Docker.
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
 POSTGRES_DB=climate_db

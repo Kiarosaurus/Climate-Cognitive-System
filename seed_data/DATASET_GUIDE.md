@@ -19,7 +19,7 @@ motor cognitivo.
 - **Horarios semanales** (`Schedule`) con la reserva como `expected_people`.
 - **Lecturas** (`sensor_readings`) cada 10 min por sesión + 30 min de warm-up (aula vacía).
 - **`actual_occupancy`** decae linealmente del piso "inicio" al "actual" por (room, weekday),
-  con un **bump reproducible de +1 o +2** (`random.Random` keyed por room+fecha+`ATTENDANCE_SEED`)
+  con un **bump reproducible de hasta +2** (0, +1 o +2; `random.Random` keyed por room+fecha+`ATTENDANCE_SEED`)
   que hace la curva **no monótona**. Fechas especiales lo sobreescriben. El `co2_ppm` se
   **deriva** del actual (mass-balance), así el gap plan-vs-realidad queda físicamente coherente.
 - **Clima Lima invierno:** frío, húmedo (garúa); indoor cerca de 20 °C. Cada lectura

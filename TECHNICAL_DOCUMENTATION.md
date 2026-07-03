@@ -554,7 +554,7 @@ else:
 - `FEEDBACK_WEIGHT = 1` → trust the sensor only.
 - `0.6` → leans on measured reality while keeping anticipation during the initial ramp-up of the occupancy window.
 
-In **ML mode**, both signals enter as distinct features: `[current_temp, hour, expected_occupancy, actual_occupancy]` — the model learns to weight them. In **heuristic mode**, `effective_occupancy × 0.05` is used.
+In **ML mode**, both signals enter as distinct features within the full Tier 3 contract `[temperature, hour_of_day, expected_occupancy, actual_occupancy, outdoor_temp, floor, volume_m3, ac_btu]` (see §3.9–3.10) — the model learns to weight them. In **heuristic mode**, `effective_occupancy × 0.05` is used.
 
 #### 3.7.3 Gap tracking (plan vs. reality)
 
@@ -673,14 +673,21 @@ and `room_code` (occupancy only). This lets the model win legitimately:
 
 | Metric (chronological holdout) | Value |
 |---|---|
-| Model RMSE | ~0.098 °C |
-| Heuristic baseline RMSE (occupancy only) | ~0.142 °C |
-| Mean baseline RMSE | ~0.53 °C |
+| Model RMSE | 0.0966 °C |
+| Model R² | 0.9646 |
+| Heuristic baseline RMSE (occupancy only) | 0.1416 °C |
+| Mean baseline RMSE | 0.5343 °C |
 | `beats_baselines` | **true** |
 
-Inference features (bundle order): `[temperature, hour_of_day,
-expected_occupancy, actual_occupancy, room_code, outdoor_temp]`. At inference,
-`outdoor_temp` is computed with `climate_service` from the reading's timestamp.
+Values are read from the shipped bundle's `metadata.metrics` (`model.joblib`);
+they are regenerated on every `train_model.py` run and will vary slightly with
+the seeded data.
+
+Inference features in the Tier 2 bundle were `[temperature, hour_of_day,
+expected_occupancy, actual_occupancy, room_code, outdoor_temp]` — superseded by
+the Tier 3 contract in §3.10, which replaces `room_code` with physical metadata.
+At inference, `outdoor_temp` is computed with `climate_service` from the
+reading's timestamp.
 
 > ⚠️ **Honest limitations** (coherence > optimality, given the scope):
 > - The target is still **synthetic**; the model beats the heuristic because it uses
@@ -724,8 +731,9 @@ per-sensor history at inference (a Mongo lookup per reading) → risk of **train
 skew** with a single sensor. They were deliberately dropped to keep inference clean and
 stateless. They remain future work if a history buffer is added.
 
-**Result:** `beats_baselines: true` is maintained (model RMSE ~0.097 vs heuristic
-~0.142). `floor` gains non-zero importance (vs `room_code` ≈ 0 in Tier 2).
+**Result:** `beats_baselines: true` is maintained (bundle metrics: model RMSE
+0.0966 vs heuristic 0.1416). `floor` gains non-zero importance (vs `room_code` ≈ 0
+in Tier 2).
 
 > ⚠️ **Honest limitation:** **occupancy still dominates** the target magnitude, so the
 > separation between rooms by metadata is **modest** (very similar offsets between
