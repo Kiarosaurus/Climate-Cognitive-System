@@ -162,7 +162,7 @@ Climate-Cognitive-System/
 
 | File | Purpose |
 |---|---|
-| `postgres/init.sql` | Script run by the `postgres:15` image on first boot (mounted at `/docker-entrypoint-initdb.d/init.sql`). Creates the initial schema if empty |
+| `postgres/init.sql` | Hook run by the `postgres:15` image on first boot of a fresh volume (mounted at `/docker-entrypoint-initdb.d/init.sql`). Intentionally minimal: the relational schema is created/migrated by the backend at startup (`create_all` + `_run_migrations`) |
 | `mongo/init.js` | MongoDB bootstrap script (indexes, collections) run by `mongo:6.0` |
 
 ### 2.4 `ml_pipeline/` — Model training

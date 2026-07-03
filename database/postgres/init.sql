@@ -1,11 +1,11 @@
-CREATE TABLE IF NOT EXISTS sensor_readings (
-    id          SERIAL PRIMARY KEY,
-    sensor_id   VARCHAR(50)    NOT NULL,
-    temperature NUMERIC(5, 2)  NOT NULL,
-    humidity    NUMERIC(5, 2)  NOT NULL,
-    co2_ppm     NUMERIC(7, 2),
-    timestamp   TIMESTAMPTZ    NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_sensor_readings_sensor_id ON sensor_readings (sensor_id);
-CREATE INDEX IF NOT EXISTS idx_sensor_readings_timestamp  ON sensor_readings (timestamp DESC);
+-- Intentionally minimal. The relational schema (users, rooms, schedules,
+-- sensor_devices, reservations) is created and migrated by the BACKEND at
+-- startup: SQLAlchemy Base.metadata.create_all + the idempotent migrations in
+-- backend/app/main.py (_run_migrations). Sensor telemetry lives in MongoDB,
+-- not PostgreSQL — an earlier version of this script created an unused
+-- sensor_readings table here, which only invited schema drift.
+--
+-- This file runs once, on first boot of a FRESH postgres volume
+-- (docker-entrypoint-initdb.d). Keep it for that hook; add DDL here only for
+-- objects SQLAlchemy cannot own (extensions, roles, tuning).
+SELECT 'CCS: schema is managed by the backend (create_all + migrations)' AS notice;
