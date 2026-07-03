@@ -9,8 +9,12 @@ Occupancy model (feed-forward + feedback):
   The engine blends both into an effective_occupancy via FEEDBACK_WEIGHT.
 
 Operates in two modes:
-  - ML mode: loads a scikit-learn model trained on historical sensor readings.
-    Features: [current_temp, hour_of_day, expected_occupancy, actual_occupancy].
+  - ML mode: loads a scikit-learn BUNDLE (model + feature contract + room_id map +
+    metadata). Feature values are assembled by name from bundle["features"], so the
+    row always matches the trained order. Available: temperature, hour_of_day,
+    expected_occupancy, actual_occupancy, outdoor_temp (climate_service, Tier 2),
+    floor/volume_m3/ac_btu (room_profile, Tier 3), plus room_code for legacy bundles.
+    outdoor temp and room metadata need no hardware.
   - Heuristic mode (fallback): estimates thermal load as
     effective_occupancy × THERMAL_LOAD_PER_PERSON when no model.joblib is present.
 
@@ -25,11 +29,17 @@ from pathlib import Path
 import numpy as np
 
 from app.services.occupancy_service import estimate_actual_occupancy, occupancy_gap
+from app.services.climate_service import outdoor_temp as _outdoor_temp
+from app.services.room_profile import get_metadata as _room_metadata
 
 logger = logging.getLogger(__name__)
 
 _MODEL_PATH = Path(__file__).resolve().parent.parent / "ml" / "model.joblib"
 _model = None
+# Feature ORDER contract + room_id→code map, populated from the trained bundle.
+_features: list[str] = ["temperature", "hour_of_day", "expected_occupancy", "actual_occupancy"]
+_room_map: dict = {}
+_metadata: dict = {}
 
 # Degrees Celsius of thermal load added per person present (heuristic bootstrap)
 THERMAL_LOAD_PER_PERSON = 0.05
@@ -48,18 +58,32 @@ def load_model() -> None:
     heuristic fallback. No exception is raised so the rest of the API stays live.
     Train with: ml_pipeline/extract_data.py → ml_pipeline/train_model.py
     """
-    global _model
+    global _model, _features, _room_map, _metadata
     try:
         import joblib
-        if _MODEL_PATH.exists():
-            _model = joblib.load(_MODEL_PATH)
-            logger.info("ML model loaded from %s", _MODEL_PATH)
-        else:
+        if not _MODEL_PATH.exists():
             logger.warning(
                 "model.joblib not found at %s — heuristic fallback active. "
                 "Run ml_pipeline/extract_data.py then ml_pipeline/train_model.py.",
                 _MODEL_PATH,
             )
+            return
+
+        loaded = joblib.load(_MODEL_PATH)
+        if isinstance(loaded, dict) and "model" in loaded:
+            # New bundle format: model + feature contract + room map + metadata.
+            _model = loaded["model"]
+            _features = loaded.get("features", _features)
+            _room_map = loaded.get("room_id_map", {})
+            _metadata = loaded.get("metadata", {})
+            logger.info(
+                "ML bundle loaded from %s (features=%s, rooms=%d, trained_at=%s)",
+                _MODEL_PATH, _features, len(_room_map), _metadata.get("trained_at"),
+            )
+        else:
+            # Legacy bare estimator — keep default feature order, no room map.
+            _model = loaded
+            logger.info("ML model (legacy bare estimator) loaded from %s", _MODEL_PATH)
     except Exception as exc:
         logger.error("Failed to load ML model: %s — heuristic fallback active.", exc)
 
@@ -134,11 +158,30 @@ async def calculate_cooling_demand(
     else:
         # actual_people may be None (no CO2) — fall back to expected for that slot
         actual_feature = actual_people if actual_people is not None else expected_people
-        features = np.array(
-            [[current_temp, hour, expected_people, actual_feature]], dtype=float
-        )
-        thermal_load = float(max(0.0, _model.predict(features)[0]))
-        model_used = "ml"
+        # Physical room metadata (Tier 3) — floor, volume_m3, ac_btu.
+        meta = _room_metadata(room_context.get("room_id"))
+        # Build the row in the exact order the bundle was trained on (_features).
+        feat_values = {
+            "temperature": current_temp,
+            "hour_of_day": hour,
+            "expected_occupancy": expected_people,
+            "actual_occupancy": actual_feature,
+            "room_code": _room_map.get(str(room_context.get("room_id")), -1),  # legacy bundles
+            "outdoor_temp": _outdoor_temp(ts),   # exogenous climate driver (Tier 2)
+            "floor": meta["floor"],
+            "volume_m3": meta["volume_m3"],
+            "ac_btu": meta["ac_btu"],
+        }
+        try:
+            row = [float(feat_values[f]) for f in _features]
+        except KeyError as exc:
+            logger.error("Unknown model feature %s — heuristic fallback for this reading.", exc)
+            thermal_load = effective_people * THERMAL_LOAD_PER_PERSON
+            model_used = "heuristic"
+        else:
+            features = np.array([row], dtype=float)
+            thermal_load = float(max(0.0, _model.predict(features)[0]))
+            model_used = "ml"
 
     thermal_load = round(thermal_load, 3)
     adjusted_target = round(target_temp - thermal_load, 2)

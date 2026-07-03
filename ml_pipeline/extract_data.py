@@ -3,44 +3,86 @@ Extract sensor_readings from MongoDB, engineer features, generate target label,
 and save a clean CSV ready for training.
 
 Occupancy features (kept as DISTINCT columns — never conflated):
-    expected_occupancy → PLANNED headcount from the room Schedule/Reservation.
-                         Feed-forward signal (known before arrival).
+    expected_occupancy → PLANNED headcount. Read from the stored cognitive_action
+                         (the real reservation plan); only synthesized as a last
+                         resort when a reading has no plan attached.
     actual_occupancy   → REALIZED headcount inferred from CO2 via a steady-state
                          mass-balance proxy. Feedback signal (measured reality).
+    room metadata      → floor, volume_m3, ac_btu per room (from room_profile).
+                         Physical drivers of thermal mass / A/C capacity, so the
+                         model learns each room's behavior instead of an opaque code.
+
+Rows are written in CHRONOLOGICAL order so train_model.py can hold out the most
+recent slice as the test set (no future→past leakage).
 
 Target — target_temp_offset:
-    How many degrees the cooling system must pre-compensate beyond the room's
-    target_temp, given current conditions. Computed heuristically from the
-    REALIZED thermal load:
+    Bootstrap heuristic from the REALIZED thermal load:
         people_load  = actual_occupancy * 0.05 * hour_weight
         solar_gain   = max(0, (temperature - 22) * 0.02)
-    This acts as a bootstrap label; once real AC feedback data is available,
-    replace _compute_offset() with actual measurements.
+    NOTE: this label is still synthetic; replace with real A/C feedback to let the
+    model exceed the heuristic (see DOCUMENTACION.md, Pendientes D2).
 
 Usage (run from project root):
     python ml_pipeline/extract_data.py
 """
 
+import json
 import os
+import sys
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from pymongo import MongoClient
 
+# Import the shared climate + room-profile models (single source of assumptions).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
+from app.services.climate_service import outdoor_temp as _outdoor_temp  # noqa: E402
+from app.services.room_profile import (  # noqa: E402
+    METADATA_FEATURES,
+    get_metadata,
+    thermal_factor,
+)
+
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 DATA_DIR = Path(__file__).parent / "data"
 OUTPUT_CSV = DATA_DIR / "features.csv"
+ROOM_MAP_JSON = DATA_DIR / "room_map.json"
 
 # CO2 mass-balance constants — MUST mirror backend/app/services/occupancy_service.py
 CO2_BASELINE_PPM = 420.0
 CO2_PPM_PER_PERSON = 25.0
 
+# Columns persisted to the CSV. room_code (opaque) is replaced by physical room
+# metadata features (Tier 3); outdoor_temp is the exogenous climate driver (Tier 2).
 FEATURES = [
     "temperature", "humidity", "co2_ppm",
     "hour_of_day", "day_of_week",
-    "expected_occupancy", "actual_occupancy",
-]
+    "expected_occupancy", "actual_occupancy", "outdoor_temp",
+] + METADATA_FEATURES
 TARGET = "target_temp_offset"
+
+# Cooling-demand contribution per °C that the outside air exceeds the baseline
+# (envelope heat gain). Baseline 18 °C so even Lima winter contributes mild,
+# varying load. Independent of occupancy → signal the occupancy heuristic misses.
+CLIMATE_GAIN = 0.06
+CLIMATE_BASELINE_C = 18.0
+
+
+def _room_factor(room_ids: pd.Series) -> np.ndarray:
+    """Per-room thermal-mass multiplier, from the shared room_profile."""
+    return room_ids.astype(str).apply(thermal_factor).to_numpy()
+
+
+def _attach_metadata(df: pd.DataFrame) -> pd.DataFrame:
+    """Add physical room metadata columns (floor, volume_m3, ac_btu) by room_id."""
+    meta = df["room_id"].astype(str).apply(get_metadata)
+    for col in METADATA_FEATURES:
+        df[col] = meta.apply(lambda m: m[col])
+    return df
+
+# Rooms used for the fully-synthetic bootstrap. Reuse the real UTEC ids so the
+# per-room thermal factor (ROOM_THERMAL) applies to synthetic rows too.
+_SYNTH_ROOMS = ["A403", "M601", "M604", "M1001", "M802", "M602"]
 
 
 def _people_from_co2(co2: np.ndarray, max_capacity: int | None = None) -> np.ndarray:
@@ -55,6 +97,13 @@ def _co2_from_people(people: np.ndarray, rng: np.random.Generator) -> np.ndarray
     """Forward mass balance: synthesize a plausible CO2 level from real occupancy."""
     noise = rng.normal(0, 15, len(people))  # sensor/ventilation jitter in ppm
     return np.maximum(350.0, CO2_BASELINE_PPM + people * CO2_PPM_PER_PERSON + noise).round(2)
+
+
+def _room_id_from_sensor(sid) -> str:
+    """Derive room_id from sensor_id (convention: 's-<ROOM>')."""
+    if isinstance(sid, str) and sid.startswith("s-"):
+        return sid[2:]
+    return sid if isinstance(sid, str) and sid else "unknown"
 
 
 def main():
@@ -74,9 +123,23 @@ def main():
         print("Insufficient real data — generating 2000 synthetic rows.")
         df = _generate_synthetic(2000)
 
-    df.to_csv(OUTPUT_CSV, index=False)
-    print(f"Saved {len(df)} rows to {OUTPUT_CSV}")
-    print(df[FEATURES + [TARGET]].describe().round(3))
+    # Encode room_id → integer code and persist the map for inference (D5).
+    df, room_map = _encode_rooms(df)
+    ROOM_MAP_JSON.write_text(json.dumps(room_map, indent=2), encoding="utf-8")
+    print(f"Saved room map ({len(room_map)} rooms) to {ROOM_MAP_JSON}")
+
+    out = df[FEATURES + [TARGET]]
+    out.to_csv(OUTPUT_CSV, index=False)
+    print(f"Saved {len(out)} rows to {OUTPUT_CSV} (chronological order preserved)")
+    print(out.describe().round(3))
+
+
+# Columns every source function returns (room_id still a string here).
+_BASE_COLS = [
+    "temperature", "humidity", "co2_ppm",
+    "hour_of_day", "day_of_week",
+    "expected_occupancy", "actual_occupancy", "room_id", "outdoor_temp",
+] + METADATA_FEATURES
 
 
 def _clean(df: pd.DataFrame) -> pd.DataFrame:
@@ -84,49 +147,72 @@ def _clean(df: pd.DataFrame) -> pd.DataFrame:
     df["co2_ppm"] = df["co2_ppm"].fillna(df["co2_ppm"].median())
     df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
     df = df.dropna(subset=["timestamp"])
+    df = df.sort_values("timestamp").reset_index(drop=True)   # D3: chronological
     df["hour_of_day"] = df["timestamp"].dt.hour
     df["day_of_week"] = df["timestamp"].dt.dayofweek
-    df = _add_occupancy(df)
+    df["room_id"] = (
+        df["sensor_id"].apply(_room_id_from_sensor) if "sensor_id" in df.columns else "unknown"
+    )
+    # Outdoor temp: use the stored value when the seed provided it, else model it.
+    if "outdoor_temp" not in df.columns:
+        df["outdoor_temp"] = np.nan
+    df["outdoor_temp"] = df["outdoor_temp"].fillna(
+        df["timestamp"].apply(lambda t: _outdoor_temp(t.to_pydatetime()))
+    )
+    df = _attach_metadata(df)       # Tier 3: physical room metadata features
+    df = _extract_expected(df)      # D1: read real plan from cognitive_action
+    df = _add_actual(df)
     df[TARGET] = _compute_offset(df)
-    return df[FEATURES + [TARGET]]
+    return df[_BASE_COLS + [TARGET]]
 
 
-def _add_occupancy(df: pd.DataFrame) -> pd.DataFrame:
-    """Attach BOTH occupancy signals.
+def _extract_expected(df: pd.DataFrame) -> pd.DataFrame:
+    """D1 — pull the REAL planned occupancy from the stored cognitive_action."""
+    if "cognitive_action" in df.columns:
+        df["expected_occupancy"] = df["cognitive_action"].apply(
+            lambda c: c.get("expected_occupancy") if isinstance(c, dict) else None
+        )
+    elif "expected_occupancy" not in df.columns:
+        df["expected_occupancy"] = np.nan
+    return df
 
-    actual_occupancy → derived from the measured CO2 (physical ground truth).
-    expected_occupancy → the plan; taken from the reading when present, else
-    synthesized from the academic-hours pattern to bootstrap the feed-forward view.
-    """
-    rng = np.random.default_rng(0)
 
-    # Feedback signal: realized occupancy inferred from measured CO2.
+def _add_actual(df: pd.DataFrame) -> pd.DataFrame:
+    """Feedback signal from CO2, plus a pattern backfill for any missing plan."""
     df["actual_occupancy"] = _people_from_co2(df["co2_ppm"].to_numpy())
 
-    # Feed-forward signal: planned occupancy. Backfill missing plan with a pattern.
-    is_class = (df["day_of_week"] < 5) & (df["hour_of_day"].between(8, 17))
+    rng = np.random.default_rng(0)
+    is_class = (df["day_of_week"] < 5) & (df["hour_of_day"].between(8, 22))
     synthetic_expected = np.where(
         is_class,
         rng.integers(10, 35, len(df)),
         rng.integers(0, 5, len(df)),
     )
-    if "expected_occupancy" not in df.columns:
-        df["expected_occupancy"] = synthetic_expected
-    else:
-        df["expected_occupancy"] = df["expected_occupancy"].fillna(
-            pd.Series(synthetic_expected, index=df.index)
-        )
-
+    df["expected_occupancy"] = df["expected_occupancy"].fillna(
+        pd.Series(synthetic_expected, index=df.index)
+    )
     return df
 
 
 def _compute_offset(df: pd.DataFrame) -> pd.Series:
-    # Realized load is driven by who ACTUALLY showed up, not who was booked.
+    # Cooling demand = (occupancy load + EXOGENOUS climate load) scaled by the
+    # room's thermal mass. The occupancy-only heuristic baseline sees neither the
+    # outdoor term nor the room factor — that is what lets the ML model win.
     hour_weight = 1 + 0.3 * np.sin((df["hour_of_day"] - 8) * np.pi / 12)
     people_load = df["actual_occupancy"] * 0.05 * hour_weight
-    solar_gain = np.maximum(0, (df["temperature"] - 22) * 0.02)
+    climate_load = np.maximum(0, (df["outdoor_temp"] - CLIMATE_BASELINE_C)) * CLIMATE_GAIN
+    room_factor = _room_factor(df["room_id"])
     noise = np.random.default_rng(1).normal(0, 0.08, len(df))
-    return np.maximum(0, people_load + solar_gain + noise).round(4)
+    return np.maximum(0, (people_load + climate_load) * room_factor + noise).round(4)
+
+
+def _encode_rooms(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Stable room_id → integer code mapping (sorted for determinism)."""
+    cats = sorted(df["room_id"].astype(str).unique())
+    room_map = {rid: i for i, rid in enumerate(cats)}
+    df = df.copy()
+    df["room_code"] = df["room_id"].astype(str).map(room_map).astype(int)
+    return df, room_map
 
 
 def _generate_synthetic(n: int) -> pd.DataFrame:
@@ -135,7 +221,7 @@ def _generate_synthetic(n: int) -> pd.DataFrame:
     days = rng.integers(0, 7, n)
     temps = rng.uniform(15.0, 45.0, n).round(2)
     humidity = rng.uniform(30.0, 100.0, n).round(2)
-    is_class = (days < 5) & (hours >= 8) & (hours <= 17)
+    is_class = (days < 5) & (hours >= 8) & (hours <= 22)
 
     # Feed-forward: PLANNED occupancy (the reservation).
     expected = np.where(is_class, rng.integers(10, 35, n), rng.integers(0, 5, n))
@@ -149,13 +235,18 @@ def _generate_synthetic(n: int) -> pd.DataFrame:
     # CO2 is generated FROM realized occupancy → the gap stays physically coherent.
     co2 = _co2_from_people(actual, rng)
 
+    # Exogenous outdoor temp spanning the seasonal range (synthetic diversity).
+    outdoor = np.round(rng.uniform(15.0, 30.0, n), 2)
+
+    room_ids = rng.choice(_SYNTH_ROOMS, n)
     hour_weight = 1 + 0.3 * np.sin((hours - 8) * np.pi / 12)
     people_load = actual * 0.05 * hour_weight
-    solar_gain = np.maximum(0, (temps - 22) * 0.02)
+    climate_load = np.maximum(0, (outdoor - CLIMATE_BASELINE_C)) * CLIMATE_GAIN
+    room_factor = _room_factor(pd.Series(room_ids))
     noise = rng.normal(0, 0.08, n)
-    target = np.maximum(0, people_load + solar_gain + noise).round(4)
+    target = np.maximum(0, (people_load + climate_load) * room_factor + noise).round(4)
 
-    return pd.DataFrame({
+    out = pd.DataFrame({
         "temperature": temps,
         "humidity": humidity,
         "co2_ppm": co2,
@@ -163,8 +254,11 @@ def _generate_synthetic(n: int) -> pd.DataFrame:
         "day_of_week": days,
         "expected_occupancy": expected,
         "actual_occupancy": actual,
+        "room_id": room_ids,
+        "outdoor_temp": outdoor,
         TARGET: target,
     })
+    return _attach_metadata(out)     # Tier 3: physical room metadata features
 
 
 if __name__ == "__main__":
