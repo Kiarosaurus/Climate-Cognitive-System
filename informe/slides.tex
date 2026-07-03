@@ -53,6 +53,8 @@
   \begin{itemize}
     \item Enfrían aulas \textbf{vacías o con baja asistencia} con la misma intensidad.
     \item No consideran la \textbf{ocupación real} ni las condiciones ambientales.
+    \item HVAC $\approx$ \textbf{50\,\%} del consumo eléctrico de un edificio
+      no residencial (Pérez-Lombard et al., 2008).
     \item Resultado: \textbf{sobreconsumo energético} sistemático y sin trazabilidad.
   \end{itemize}
   \vfill
@@ -118,6 +120,7 @@
         \item MQ-135 --- CO\textsubscript{2} $\rightarrow$ ocupación
         \item MQ-7 --- monóxido de carbono (ADC $\rightarrow$ ppm)
         \item Cámara + MediaPipe --- aforo
+        \item Emisor IR --- actuador del A/C (fase 2)
       \end{itemize}
       \footnotesize Serial $\rightarrow$ \texttt{hardware/sistema.py} $\rightarrow$ \texttt{POST /sensors/} cada ${\sim}2$\,s.
     \end{column}
@@ -132,6 +135,7 @@
     \item \textbf{Ocupación real desde CO\textsubscript{2}:} balance de masa
       (\texttt{personas} $\approx$ (CO\textsubscript{2} $-$ base) / ppm-persona).
     \item \textbf{Fallback heurístico}, \textbf{detección de anomalías} (CO),
+      \textbf{visión por computadora} (aforo por cámara + MediaPipe),
       \textbf{asistente NLP} (IBM Watson) y \textbf{reportes de ROI}.
   \end{itemize}
   \vfill
@@ -201,6 +205,7 @@
       \begin{itemize}\small
         \item Ambiental: menos kWh y CO\textsubscript{2}.
         \item Económico: ahorro en factura.
+        \item Institucional: trazabilidad del uso real de aulas.
         \item Seguridad: alertas de CO.
         \item Automatización basada en datos.
       \end{itemize}

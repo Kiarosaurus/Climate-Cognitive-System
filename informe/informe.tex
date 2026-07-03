@@ -237,7 +237,10 @@ La IA es el núcleo funcional, no un adorno. Opera en varias capas:
 \item \textbf{Predicción de carga térmica (ML).} Un
 \texttt{HistGradientBoostingRegressor}~\cite{sklearn} predice cuántos grados
 pre-compensar, a partir de temperatura, hora, ocupación esperada, ocupación
-real, temperatura exterior y metadata física del aula.
+real, temperatura exterior y metadata física del aula. Se valida con
+\emph{holdout} cronológico frente a dos \emph{baselines} (media y heurística de
+ocupación); el modelo solo se despliega si las supera
+(\texttt{beats\_baselines}).
 \item \textbf{Estimación de ocupación real.} Balance de masa sobre el
 CO\textsubscript{2}~\cite{co2occupancy}: \texttt{personas} $\approx$
 (CO\textsubscript{2} $-$ base) / ppm-por-persona.
