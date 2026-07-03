@@ -128,15 +128,16 @@ def _run_migrations(engine, text):
 def _seed_admin(SessionLocal):
     """Ensure the default admin account exists with a valid Argon2 password hash.
 
-    On every startup the hash is force-updated so that passlib→pwdlib migrations
-    or manual hash resets in the DB are self-healing. In production, change the
-    default password immediately after first login.
+    Healing is limited to UNREADABLE hashes (e.g. passlib→pwdlib migration
+    leftovers): a valid hash is never overwritten — force-resetting on every
+    boot would silently revert a rotated production password to the known
+    default. Change the default password immediately after first login.
     """
     logger.info("_seed_admin: starting.")
     db = SessionLocal()
     try:
         from app.models.admin import User
-        from app.core.security import hash_password
+        from app.core.security import hash_password, verify_password
 
         admin_user = db.query(User).filter(User.username == "admin").first()
         if not admin_user:
@@ -148,10 +149,23 @@ def _seed_admin(SessionLocal):
             ))
             logger.info("_seed_admin: created admin user.")
         else:
-            admin_user.hashed_password = hash_password("admin")
-            admin_user.role = "admin"
-            admin_user.status = "active"
-            logger.info("_seed_admin: reset admin credentials (hash=%s…).", admin_user.hashed_password[:20])
+            try:
+                # Probe with a dummy password: a wrong password returns False;
+                # an unreadable/foreign hash format raises instead.
+                verify_password("__hash_format_probe__", admin_user.hashed_password)
+                hash_ok = True
+            except Exception:
+                hash_ok = False
+            if hash_ok:
+                logger.info("_seed_admin: admin exists with a valid hash — credentials left untouched.")
+            else:
+                admin_user.hashed_password = hash_password("admin")
+                admin_user.role = "admin"
+                admin_user.status = "active"
+                logger.warning(
+                    "_seed_admin: unreadable password hash — reset to the default. "
+                    "Log in and change it immediately."
+                )
         db.commit()
         logger.info("_seed_admin: done.")
     except Exception as exc:

@@ -83,12 +83,9 @@ async def save_reading(db, reading: SensorReading, cognitive_action: dict | None
     doc["timestamp"] = reading.timestamp.replace(tzinfo=None).strftime("%Y-%m-%dT%H:%M:%S.%f")
     if cognitive_action is not None:
         doc["cognitive_action"] = cognitive_action
-    # DEBUG: trace every persisted reading — confirms WHICH source created it
-    print(
-        f"[INGEST] sensor_id={reading.sensor_id} "
-        f"is_simulated={reading.is_simulated} "
-        f"co_ppm={reading.co_ppm} "
-        f"ts={doc['timestamp']}"
+    logger.info(
+        "[INGEST] sensor_id=%s is_simulated=%s co_ppm=%s ts=%s",
+        reading.sensor_id, reading.is_simulated, reading.co_ppm, doc["timestamp"],
     )
     result = await db["sensor_readings"].insert_one(doc)
     return str(result.inserted_id)

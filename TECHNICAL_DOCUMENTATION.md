@@ -826,6 +826,9 @@ in Tier 2).
 - [ ] Calibration of the **infrared emitter** for real AC control
 - [ ] Setup of **persistent Ngrok tunnels** for the Watson Extension (custom extension in production)
 - [ ] Email notifications when approving/rejecting pending users
+- [ ] Pydantic `response_model` schemas on all endpoints (today endpoints return raw dicts — input validation is complete, output schemas are pending)
+- [ ] Pagination on the admin list endpoints (`/admin/users`, `/admin/reservations`); `/sensors/` already paginates
+- [ ] Migrate `datetime.utcnow()` (deprecated in Python 3.12+) to `datetime.now(timezone.utc)` keeping the documented naive-UTC storage convention
 - [ ] **Automatic retraining** pipeline of the ML model with real data (scheduled job reading from MongoDB)
 - [ ] Replace the **synthetic** `target_temp_offset` with **real AC feedback** — the only path to genuine quality improvements (Tier 3)
 - [ ] Replace the deterministic `climate_service` with a **real weather API** when connectivity is available

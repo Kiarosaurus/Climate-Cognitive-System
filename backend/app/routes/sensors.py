@@ -95,15 +95,15 @@ async def get_co_emergencies(
 
     # Purge simulated readings older than 15 seconds — if the simulator stops sending,
     # the DB is clean within one polling cycle and the frontend receives nothing.
-    fiveteen_sec_ago = (now - timedelta(seconds=15)).strftime("%Y-%m-%dT%H:%M:%S.%f")
+    fifteen_sec_ago = (now - timedelta(seconds=15)).strftime("%Y-%m-%dT%H:%M:%S.%f")
     purge = await db["sensor_readings"].delete_many(
-        {"is_simulated": True, "timestamp": {"$lt": fiveteen_sec_ago}}
+        {"is_simulated": True, "timestamp": {"$lt": fifteen_sec_ago}}
     )
     if purge.deleted_count:
         print(f"Purging old simulation data...")
 
     cursor = db["sensor_readings"].find(
-        {"co_ppm": {"$gt": 50}, "timestamp": {"$gte": fiveteen_sec_ago}}
+        {"co_ppm": {"$gt": 50}, "timestamp": {"$gte": fifteen_sec_ago}}
     ).sort("co_ppm", -1)
 
     docs = await cursor.to_list(length=200)

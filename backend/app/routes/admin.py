@@ -175,9 +175,9 @@ def update_room_policy(
     rename/edit path in update_room.
     """
     if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Solo un administrador puede cambiar la política de control.")
+        raise HTTPException(status_code=403, detail="Admin role required to change the control policy.")
     if payload.control_policy not in CONTROL_POLICIES:
-        raise HTTPException(status_code=422, detail=f"control_policy inválida. Use una de: {sorted(CONTROL_POLICIES)}.")
+        raise HTTPException(status_code=422, detail=f"Invalid control_policy. Use one of: {sorted(CONTROL_POLICIES)}.")
     room = db.query(Room).filter(Room.id == room_id).first()
     if not room:
         raise HTTPException(status_code=404, detail=f"Room id='{room_id}' not found.")
@@ -200,7 +200,7 @@ def reload_model(current_user: User = Depends(get_current_user)):
     regenerate model.joblib, then call this to pick it up live. Admin-only.
     """
     if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Solo un administrador puede recargar el modelo.")
+        raise HTTPException(status_code=403, detail="Admin role required to reload the model.")
     from app.services.predictive_service import load_model, active_engine
     load_model()
     engine = active_engine()
@@ -843,10 +843,6 @@ async def get_room_timeline(
     """
     _require_admin_or_collaborator(current_user)
 
-    room = db_sql.query(Room).filter(Room.id == room_id).first()
-    if not room:
-        raise HTTPException(status_code=404, detail=f"Room id='{room_id}' not found.")
-
     now = datetime.now(timezone.utc)
     start = now - timedelta(hours=12)
     end = now + timedelta(hours=12)
@@ -855,8 +851,12 @@ async def get_room_timeline(
     now_hour = now.replace(minute=0, second=0, microsecond=0)
     anchors = [now_hour + timedelta(hours=i) for i in range(-12, 13)]
 
-    # PG lookups (sync) — bridged to async via threadpool
+    # PG lookups (sync) — bridged to async via threadpool, room lookup included
+    # so no blocking query runs on the event loop.
     def _load_pg_context():
+        room = db_sql.query(Room).filter(Room.id == room_id).first()
+        if room is None:
+            return None, [], [], []
         sensor_ids = [d.id for d in db_sql.query(SensorDevice).filter(SensorDevice.room_id == room_id).all()]
         start_naive = start.replace(tzinfo=None)
         end_naive = end.replace(tzinfo=None)
@@ -873,9 +873,11 @@ async def get_room_timeline(
         for r in reservations:
             _ = r.user.username if r.user else None
         schedules = db_sql.query(Schedule).filter(Schedule.room_id == room_id).all()
-        return sensor_ids, reservations, schedules
+        return room, sensor_ids, reservations, schedules
 
-    sensor_ids, reservations, schedules = await run_in_threadpool(_load_pg_context)
+    room, sensor_ids, reservations, schedules = await run_in_threadpool(_load_pg_context)
+    if room is None:
+        raise HTTPException(status_code=404, detail=f"Room id='{room_id}' not found.")
 
     # Aggregate past 12h readings per hour
     start_iso = start.replace(tzinfo=None).strftime("%Y-%m-%dT%H:%M:%S.%f")

@@ -18,10 +18,13 @@ async def require_api_key(key: str = Security(_api_key_header)):
         raise HTTPException(status_code=403, detail="Invalid API key")
 
 
-async def get_current_user(
+def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db_sql),
 ):
+    # Deliberately sync: FastAPI runs sync dependencies in the threadpool, so the
+    # blocking SQL lookup below never lands on the event loop. As `async def` it
+    # would stall the loop on every authenticated request.
     from app.models.admin import User  # local import avoids circular at module load
 
     credentials_exc = HTTPException(
