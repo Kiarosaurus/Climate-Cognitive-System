@@ -427,6 +427,7 @@ def setup_room(
     db: Session = Depends(get_db_sql),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin(current_user)
     try:
         room = db.query(Room).filter(Room.name == payload.name).first()
         if room:

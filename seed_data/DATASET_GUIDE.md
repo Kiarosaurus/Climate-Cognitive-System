@@ -48,6 +48,11 @@ python seed_data/generate_dataset.py --wipe      # limpia sensor_readings antes 
 
 Overrides: `MONGO_URI`, `POSTGRES_URI`.
 
+Re-ejecutar sin `--wipe` es seguro: si Mongo ya contiene lecturas de los sensores del
+seed, el insert se **salta** (guard de idempotencia — evita duplicar telemetría y
+corromper el ROI). El lado Postgres es idempotente por sí mismo (merge de rooms/sensores,
+schedules re-escritos, reservas con check de existencia).
+
 > Reset previo recomendado: `docker compose down -v && docker compose up -d` (re-ejecuta
 > los init scripts), luego correr el generador. El usuario `profesor_utec`
 > (password `changeme123`, **solo para dev/seed** — no usar en despliegues públicos)

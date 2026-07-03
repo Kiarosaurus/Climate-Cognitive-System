@@ -135,11 +135,14 @@ Climate-Cognitive-System/
 ├── backend/
 │   ├── Dockerfile
 │   ├── requirements.txt
+│   ├── tests/                   # Unit tests (services) + DB-free route smoke tests
 │   └── app/
 │       ├── main.py              # App bootstrap, startup hooks, migrations, admin seed
 │       ├── config.py            # Env-driven configuration
+│       ├── dependencies.py      # get_current_user (JWT + revocation) + require_api_key
 │       ├── database.py          # MongoDB (Motor) connection
 │       ├── database_sql.py      # PostgreSQL (SQLAlchemy) connection
+│       ├── core/                # security.py (Argon2 + JWT), timeutils.py (UTC↔local)
 │       ├── models/              # Pydantic (sensor) + SQLAlchemy (admin) models
 │       ├── routes/              # sensors, admin, chat, auth, reports
 │       ├── services/            # data, predictive, occupancy, climate, room_profile, watson
@@ -149,10 +152,12 @@ Climate-Cognitive-System/
 │   ├── package.json
 │   └── src/
 ├── ml_pipeline/
+│   ├── common.py                # Shared bootstrap-label formula (label ↔ baseline)
 │   ├── extract_data.py          # Mongo → feature CSV (+ synthetic augmentation)
 │   └── train_model.py           # Train & export the model bundle
 ├── seed_data/
-│   └── generate_dataset.py      # Reproducible UTEC dataset → Mongo + PostgreSQL
+│   ├── generate_dataset.py      # Reproducible UTEC dataset → Mongo + PostgreSQL
+│   └── DATASET_GUIDE.md         # Usage, time window and attendance model
 ├── hardware/
 │   ├── sistema.py               # Arduino UNO Serial → camera occupancy → HTTPS gateway
 │   └── README.md                # Components, calibration and run instructions
@@ -247,9 +252,8 @@ POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
 POSTGRES_DB=climate_db
 
-# Auth
+# Auth — the JWT algorithm is hardcoded to HS256 in app/config.py (not env-read)
 SECRET_KEY=<random-hex>           # auto-generated in memory if omitted (tokens reset on restart)
-ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=15
 ADMIN_PASSWORD=<strong-password>  # initial 'admin' password — REQUIRED for public deployments
 
@@ -283,7 +287,10 @@ curl -X POST http://localhost:8000/api/v1/auth/login \
 ```
 
 ### Ingest a sensor reading
-> The `/sensors` and `/chat` routers are protected by the `WATSON_EXTENSION_KEY` API key.
+> The `/sensors` and `/chat` routers are gated by the `WATSON_EXTENSION_KEY` API key —
+> a **shared anti-abuse gate, not per-device authentication** (the frontend bakes it
+> into the public JS bundle). It is enforced only when the env var is set; unset, the
+> routes are open (local dev).
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/sensors/ \
@@ -310,7 +317,11 @@ Example response — note the predicted cognitive action:
     "cooling_mode": "PRE-COOLING",
     "target": 21.85,
     "thermal_load_offset": 0.15,
-    "model": "ml"
+    "model": "ml",
+    "expected_occupancy": 30,
+    "actual_occupancy": 15,
+    "effective_occupancy": 21.0,
+    "occupancy_gap": 15
   },
   "room_context": { "room_name": "Lab A", "expected_people": 30 }
 }
@@ -341,7 +352,7 @@ The repo includes the client-side gateway for the real sensor node deployed in c
 
 ## Running Tests
 
-Unit tests cover the pure cognitive logic — CO₂ mass-balance occupancy, the deterministic Lima climate model, the heuristic cooling engine (feed-forward/feedback blend, policies, AC decision) and per-room physical metadata:
+Unit tests cover the pure cognitive logic — CO₂ mass-balance occupancy, the deterministic Lima climate model, the heuristic cooling engine (feed-forward/feedback blend, policies, AC decision) and per-room physical metadata — plus DB-free route smoke tests for the auth gates and RBAC (these skip automatically when `fastapi` is not installed):
 
 ```bash
 cd backend
@@ -371,17 +382,21 @@ python ml_pipeline/train_model.py     # → backend/app/ml/model.joblib
 
 ## API Surface
 
-| Method | Endpoint                              | Auth               | Purpose                                      |
-|--------|---------------------------------------|--------------------|----------------------------------------------|
-| GET    | `/health`                             | —                  | Liveness probe                               |
-| POST   | `/api/v1/auth/login`                  | —                  | Obtain JWT                                    |
-| POST   | `/api/v1/sensors/`                    | API key            | Ingest reading + cognitive action             |
-| GET    | `/api/v1/sensors/`                    | API key            | List recent readings (filter by room/sensor)  |
-| GET    | `/api/v1/sensors/emergencies`         | JWT (admin/collab) | Real-time CO alerts                           |
-| PUT    | `/api/v1/sensors/{id}/control`        | JWT                | Toggle device active / control-enabled         |
-| POST   | `/api/v1/chat/`                       | API key            | Watson Assistant conversation                  |
-| GET    | `/api/v1/reports/...`                 | JWT (admin)        | ROI / energy-savings report                   |
-| *      | `/api/v1/admin/...`                   | JWT (admin)        | Manage users, rooms, schedules, reservations   |
+| Method | Endpoint                              | Auth                         | Purpose                                      |
+|--------|---------------------------------------|------------------------------|----------------------------------------------|
+| GET    | `/health`                             | —                            | Liveness probe                               |
+| POST   | `/api/v1/auth/login`                  | —                            | Obtain JWT                                    |
+| POST   | `/api/v1/auth/register`               | —                            | Create account (guest auto-active; others pending) |
+| POST   | `/api/v1/sensors/`                    | API key                      | Ingest reading + cognitive action             |
+| GET    | `/api/v1/sensors/`                    | API key                      | List recent readings (filter by room/sensor)  |
+| GET    | `/api/v1/sensors/emergencies`         | API key + JWT (admin/collab) | Real-time CO alerts                           |
+| PUT    | `/api/v1/sensors/{id}/control`        | API key + JWT (no guests; collaborator needs an active reservation) | Toggle device active / control-enabled |
+| POST   | `/api/v1/chat/`                       | API key                      | Watson Assistant conversation                  |
+| GET    | `/api/v1/reports/roi`                 | JWT (admin)                  | ROI / energy-savings report                   |
+| *      | `/api/v1/admin/...`                   | JWT (admin; reservations & timeline also collaborator) | Manage users, rooms, schedules, reservations |
+
+> The API key rows apply router-wide: every `/sensors` and `/chat` route also passes
+> through `require_api_key` (no-op while `WATSON_EXTENSION_KEY` is unset).
 
 Full interactive documentation is available at **`/docs`** (Swagger UI) when the backend is running.
 

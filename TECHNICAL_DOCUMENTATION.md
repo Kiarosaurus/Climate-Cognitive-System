@@ -63,6 +63,9 @@ Climate-Cognitive-System/
 ├── backend/
 │   ├── Dockerfile
 │   ├── requirements.txt
+│   ├── requirements-dev.txt
+│   ├── pytest.ini
+│   ├── tests/
 │   └── app/
 │       ├── main.py
 │       ├── config.py
@@ -91,6 +94,7 @@ Climate-Cognitive-System/
 │   ├── postgres/init.sql
 │   └── mongo/init.js
 ├── ml_pipeline/
+│   ├── common.py
 │   ├── extract_data.py
 │   ├── train_model.py
 │   └── data/
@@ -108,7 +112,8 @@ Climate-Cognitive-System/
 ├── docker-compose.yml
 ├── generate_openapi.py
 ├── openapi_watson.json
-├── .env
+├── .env                   # (NOT versioned)
+├── .env.example
 ├── README.md
 └── TECHNICAL_DOCUMENTATION.md
 ```
@@ -118,11 +123,12 @@ Climate-Cognitive-System/
 | Subfolder / file | System layer | Purpose |
 |---|---|---|
 | `app/main.py` | **Bootstrap** | Creates the `FastAPI` instance, registers routers, runs the startup hooks (`load_model`, idempotent migrations, admin seed, Watson init) |
-| `app/config.py` | **Configuration** | Loads environment variables (`MONGO_URI`, `POSTGRES_URI`, `SECRET_KEY`, Watson credentials). Generates a random `SECRET_KEY` if none exists |
+| `app/config.py` | **Configuration** | Loads environment variables (`MONGO_URI`, `POSTGRES_URI`, `SECRET_KEY`, `ADMIN_PASSWORD`, `LOCAL_UTC_OFFSET_HOURS`, Watson credentials). Generates a random `SECRET_KEY` if none exists |
 | `app/dependencies.py` | **DI injection** | Provides `get_current_user` (JWT decode + RBAC) and `require_api_key` (Watson Extension Key validation) |
 | `app/database.py` | **NoSQL DB** | `motor.motor_asyncio.AsyncIOMotorClient` client for MongoDB (async I/O) |
 | `app/database_sql.py` | **Relational DB** | SQLAlchemy `engine` + `SessionLocal` + declarative `Base` for PostgreSQL |
 | `app/core/security.py` | **Security** | `hash_password` / `verify_password` with **Argon2** via `pwdlib`, `create_access_token` / `decode_token` JWT (`python-jose`) |
+| `app/core/timeutils.py` | **Time convention** | `to_local` / `local_now` — the single home of the UTC→local shift (`LOCAL_UTC_OFFSET_HOURS`); every schedule/reservation comparison and time-derived model feature goes through here |
 | `app/models/` | **Models** | `admin.py` (SQLAlchemy ORM: `User`, `Room`, `SensorDevice`, `Reservation`, `Schedule`); `sensor.py` (Pydantic `SensorReading` schema) |
 | `app/routes/` | **REST endpoints** | `auth.py` (login/register), `admin.py` (CRUD for rooms/sensors/users/reservations), `sensors.py` (ingest + physical control + emergencies), `reports.py` (ROI), `chat.py` (Watson proxy) |
 | `app/services/` | **Domain logic** | `data_service.py` (ingest pipeline), `predictive_service.py` (ML + heuristic + feed-forward/feedback blend), `occupancy_service.py` (actual-occupancy estimation via CO₂ + plan-vs-actual gap), `climate_service.py` (Lima outdoor temperature by month/hour — exogenous driver, no HW), `room_profile.py` (per-room physical metadata: floor, volume, BTU — model features, no HW), `watson_service.py` (Watson client) |
@@ -132,7 +138,7 @@ Climate-Cognitive-System/
 
 | Subfolder / file | System layer | Purpose |
 |---|---|---|
-| `src/api/client.ts` | **HTTP client** | `axios` instance with `baseURL = /api/v1`, **401 interceptor → logout + redirect** with an anti-loop guard |
+| `src/api/client.ts` | **HTTP client** | `axios` instance with `baseURL = /api/v1`; **401-only interceptor** → session-expiry flow (`authHandlers.onSessionExpired`), excluding `/auth/login`; **403 reaches the caller** (authorization ≠ expiry); `getApiErrorDetail` centralizes API error extraction |
 | `src/context/AuthContext.tsx` | **Global auth state** | Persists the JWT in `sessionStorage` (destroyed when the tab closes), exposes `user`, `token`, `login`, `logout`, injects the `Authorization: Bearer` header |
 | `src/context/EmergencyContext.tsx` | **Global emergency state** | Polls `/sensors/emergencies` every 5s, keeps `realEmergencies` / `simulatedEmergencies`, controls the global popup |
 | `src/components/Layout.tsx` | **UI shell** | Sidebar with RBAC-filtered navigation, topbar, integration of the `FloatingChat` Watson widget |
@@ -150,7 +156,7 @@ Climate-Cognitive-System/
 | `src/views/ROIReport.tsx` | **ROI dashboard** | Energy KPIs, Traditional vs. Cognitive `BarChart`, model summary |
 | `src/components/EmptyState.tsx` / `Logo.tsx` / `MetricCard.tsx` | **UI widgets** | Empty-list placeholder, brand mark, dashboard stat card |
 | `src/utils/sensorColors.ts` | **UI tokens** | Shared reading-level color thresholds used across tables and cards |
-| `src/views/Register.tsx` | **Public registration** | Auto-approval of the `guest` role; `collaborator` / `admin` stay `pending` |
+| `src/utils/formStyles.ts` | **UI tokens** | `NUM_INPUT_MODS` — shared Tailwind modifiers stripping native number-input spinners (see §3.5) |
 
 ### 2.3 `database/` — Database initialization
 
@@ -163,6 +169,7 @@ Climate-Cognitive-System/
 
 | File | Purpose |
 |---|---|
+| `common.py` | Shared bootstrap-label helpers (`hour_weight`, `bootstrap_people_load`) — the single home of the occupancy-load formula used BOTH by the label builder (`extract_data.py`) and the heuristic baseline (`train_model.py`), so `beats_baselines` stays meaningful |
 | `extract_data.py` | Exports historical readings from MongoDB to CSV (`data/`). Reads the **real** `expected_occupancy` from the `cognitive_action`, derives `actual_occupancy` from `co2_ppm` (mass balance), reads/derives `outdoor_temp` (Lima climate), attaches **per-room physical metadata** (`floor, volume_m3, ac_btu` from `room_profile`) and writes rows in **chronological order**. The target combines occupancy load + exogenous climate load × per-room thermal factor |
 | `train_model.py` | Trains a `HistGradientBoostingRegressor` with **early stopping** over `[temperature, hour_of_day, expected_occupancy, actual_occupancy, outdoor_temp, floor, volume_m3, ac_btu]`, uses a **chronological holdout** (last 20%) and reports **baselines** (mean + **occupancy-only** heuristic). Serializes a **bundle** `{model, features, room_id_map, metadata}` via `joblib` at `backend/app/ml/model.joblib` |
 | `data/` | Training / validation datasets + `room_map.json` |
@@ -244,7 +251,7 @@ The same pattern applies to the **health-check polling** (`checkHealth` every 30
 
 **Problem:** Simulated readings with `co_ppm > 50` (carbon-monoxide alert) are stored in MongoDB alongside real ones. Without an expiration policy, a past simulation session would leave **zombie alerts** that the frontend would keep treating as active, causing perpetual popups and noise in the emergency dashboard.
 
-**Implemented solution** (`backend/app/routes/sensors.py:75-176`):
+**Implemented solution** (`backend/app/routes/sensors.py:76-176`):
 
 The `GET /api/v1/sensors/emergencies` endpoint applies a **logical Time-To-Live (TTL)** of **15 seconds** over simulated readings:
 
@@ -253,13 +260,13 @@ now = datetime.now(timezone.utc)
 
 # Purge simulated readings older than 15 seconds — if the simulator stops sending,
 # the DB is clean within one polling cycle and the frontend receives nothing.
-fiveteen_sec_ago = (now - timedelta(seconds=15)).strftime("%Y-%m-%dT%H:%M:%S.%f")
+fifteen_sec_ago = (now - timedelta(seconds=15)).strftime("%Y-%m-%dT%H:%M:%S.%f")
 purge = await db["sensor_readings"].delete_many(
-    {"is_simulated": True, "timestamp": {"$lt": fiveteen_sec_ago}}
+    {"is_simulated": True, "timestamp": {"$lt": fifteen_sec_ago}}
 )
 
 cursor = db["sensor_readings"].find(
-    {"co_ppm": {"$gt": 50}, "timestamp": {"$gte": fiveteen_sec_ago}}
+    {"co_ppm": {"$gt": 50}, "timestamp": {"$gte": fifteen_sec_ago}}
 ).sort("co_ppm", -1)
 ```
 
@@ -296,13 +303,13 @@ It is considered **real** only if `is_simulated` is strictly `False` **AND** bot
 
 **Implemented solution** (`frontend/src/views/Infrastructure.tsx`):
 
-A single `Infrastructure` component with a symmetric **2-column CSS grid**, fixed to the viewport height:
+A single `Infrastructure` component with a symmetric **2-column CSS grid**, fixed to the viewport height on desktop (`frontend/src/views/Infrastructure.tsx:439`):
 
 ```tsx
-<div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch
-                h-[calc(100vh-7rem)]
-                min-h-[calc(100vh-7rem)]
-                max-h-[calc(100vh-7rem)]">
+<div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 lg:items-stretch
+                lg:h-[calc(100vh-7rem)]
+                lg:min-h-[calc(100vh-7rem)]
+                lg:max-h-[calc(100vh-7rem)]">
   {/* ── Columna izquierda: Aulas ───────────── */}
   <section> ...formularios Registrar / Editar de Room... </section>
 
@@ -316,8 +323,8 @@ A single `Infrastructure` component with a symmetric **2-column CSS grid**, fixe
 | Aspect | Implementation |
 |---|---|
 | **Layout** | `grid grid-cols-1 lg:grid-cols-2` — single-column on mobile, dual-column on desktop |
-| **Height** | `h-[calc(100vh-7rem)]` fixed to the viewport — no page scroll, only internal panel scroll |
-| **Symmetry** | `items-stretch` + `gap-8` — both panels occupy exactly the same height |
+| **Height** | `lg:h-[calc(100vh-7rem)]` fixed to the viewport on desktop — no page scroll, only internal panel scroll (mobile flows naturally) |
+| **Symmetry** | `lg:items-stretch` + `gap-6 lg:gap-8` — both desktop panels occupy exactly the same height |
 | **Sub-navigation** | Each panel has its own internal `TabBar` (`register` / `edit`) — one's state does not affect the other |
 | **Submitting flags** | Independent `roomSubmitting` and `sensorSubmitting` — one panel can be submitting while the other stays interactive |
 | **Shared toast** | A single global `Toast` with auto-dismiss reports the result of either panel |
@@ -340,7 +347,7 @@ A single `Infrastructure` component with a symmetric **2-column CSS grid**, fixe
 
 #### 3.4.1 Schema without strict FKs
 
-The idempotent migrations (`backend/app/main.py:74-123`) **deliberately drop** the FK constraints on `room_id` in the child tables:
+The idempotent migrations (`backend/app/main.py:74-125`) **deliberately drop** the FK constraints on `room_id` in the child tables:
 
 ```python
 "ALTER TABLE sensor_devices DROP CONSTRAINT IF EXISTS sensor_devices_room_id_fkey",
@@ -351,7 +358,7 @@ The FK **is kept** on `schedules.room_id` because schedules are **tightly-couple
 
 #### 3.4.2 `DELETE /admin/rooms/{room_id}` endpoint
 
-(`backend/app/routes/admin.py:315`)
+(`backend/app/routes/admin.py:313`)
 
 ```python
 @router.delete("/rooms/{room_id}", status_code=200)
@@ -442,12 +449,15 @@ Without an exact character-by-character match, the button **stays disabled** (`d
 
 #### 3.5.1 Disabling native spinners
 
-A composed Tailwind class applied to every numeric input (`frontend/src/views/Infrastructure.tsx:396`, `Reservations.tsx:269`):
+The spinner-stripping modifiers live in one shared token (`frontend/src/utils/formStyles.ts`) and are concatenated onto each view's base input class (`frontend/src/views/Infrastructure.tsx:397`, `Reservations.tsx:270`):
 
 ```ts
-const numInputCls = `${inputCls} [appearance:textfield]
-  [&::-webkit-outer-spin-button]:appearance-none
-  [&::-webkit-inner-spin-button]:appearance-none`
+// utils/formStyles.ts
+export const NUM_INPUT_MODS =
+  '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
+
+// views/Infrastructure.tsx / Reservations.tsx
+const numInputCls = `${inputCls} ${NUM_INPUT_MODS}`
 ```
 
 Covers the three main engines:
@@ -690,7 +700,8 @@ The label carries irreducible noise σ = 0.08 °C (`extract_data.py`), so the be
 achievable RMSE is ≈ 0.08 — the model at 0.0966 sits near that floor, which also
 rules out overfitting on the synthetic target. Beyond the single holdout, an
 expanding-window `TimeSeriesSplit` CV (3 folds over the real rows) and a per-room
-test RMSE are reported and stored in the bundle metadata.
+test RMSE are reported and stored in the bundle metadata on every new
+`train_model.py` run (the currently shipped bundle predates those keys).
 
 The gate is enforced at **serve time**: `predictive_service.load_model` refuses
 to serve a bundle whose `beats_baselines` is `false` and stays on the transparent
@@ -767,7 +778,7 @@ in Tier 2).
 - [x] Bootstrap scripts mounted read-only at `/docker-entrypoint-initdb.d/`
 - [x] Nginx reverse proxy for the Vite frontend (static build served on port 80)
 - [x] **Idempotent** schema migrations at startup (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, guarded `DO $$ ... $$` blocks)
-- [x] Automatic admin-user seed with **Argon2 hash re-applied on every boot** (self-healing against hashing migrations)
+- [x] Automatic admin-user seed with **self-healing limited to unreadable hashes** (e.g. passlib→pwdlib leftovers) — a valid hash is never overwritten, so a rotated password survives restarts
 - [x] Startup retries (5 attempts × 3 s) to tolerate slow PostgreSQL startup
 
 ### Backend & Security
@@ -794,9 +805,9 @@ in Tier 2).
 - [x] **ML pipeline hardening (Tier 1)** — real `expected_occupancy` from `cognitive_action` (D1), `room_code` feature (D5), **chronological holdout** (D3), mean/heuristic **baselines** (D4), **bundle** with metadata/`sha256`/metrics (D6), **early stopping** (D7)
 - [x] **Exogenous climate driver + model that beats the baseline (Tier 2)** — `climate_service.py` (deterministic Lima outdoor temperature), `outdoor_temp` feature, per-room thermal factor, non-circular target → `beats_baselines: true` (section 3.9)
 - [x] **Per-room physical metadata (Tier 3)** — `room_profile.py` replaces the opaque `room_code` with `floor`/`volume_m3`/`ac_btu`; single source of the `thermal_factor`; no train/serve skew (section 3.10)
-- [x] Persistence of `cognitive_action` in MongoDB alongside each reading — fields: `ac_status` (`ON` / `STANDBY` / `DISABLED`), `target`, `model_used` (`ml` / `heuristic`)
+- [x] Persistence of `cognitive_action` in MongoDB alongside each reading — fields: `ac_status` (`ON` / `STANDBY` / `DISABLED`), `target`, `thermal_load_offset`, `model` (`ml` / `heuristic` / `manual` / `none`) + the occupancy telemetry (§3.7.3)
 - [x] **IBM Watson Assistant** integration via the `/api/v1/chat/` proxy (custom extension with OpenAPI published in `openapi_watson.json`)
-- [x] **Energy ROI** computation engine (`/reports/roi`): 7 days, kWh saved, CO₂ avoided (kg), monetary value (USD)
+- [x] **Energy ROI** computation engine (`/reports/roi`): 7 days, kWh saved, monetary value (USD); the CO₂-avoided figure (kg) is derived client-side in `ROIReport.tsx` (0.233 kg/kWh grid factor)
 - [x] **ROI simulation** when the database is recent and there is not yet enough history — projects plausible values so the dashboard is not empty in demos
 
 ### Frontend UI
@@ -870,37 +881,37 @@ in Tier 2).
 | `POST` | `/api/v1/auth/login` | Obtain a JWT (form-encoded) |
 | `POST` | `/api/v1/auth/register` | Register a new account |
 
-### Sensors (requires API Key `X-API-Key`)
+### Sensors (router-wide API Key `X-API-Key` — enforced only when `WATSON_EXTENSION_KEY` is set)
 
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/v1/sensors/` | Ingest an IoT reading + run the cognitive action |
 | `GET` | `/api/v1/sensors/` | List readings filterable by `room_id`, `sensor_id` |
-| `GET` | `/api/v1/sensors/emergencies` | CO > 50 ppm alerts (15 s window) |
-| `PUT` | `/api/v1/sensors/{id}/control` | Enable/disable a sensor (admin or collaborator with an active reservation) |
+| `GET` | `/api/v1/sensors/emergencies` | CO > 50 ppm alerts (15 s window) — **also requires JWT** (admin/collaborator) |
+| `PUT` | `/api/v1/sensors/{id}/control` | Enable/disable a sensor — **also requires JWT** (guests denied; collaborator needs an active reservation on the room) |
 
-### Admin (requires JWT)
+### Admin (requires JWT — admin role unless noted)
 
 | Method | Path | Description |
 |---|---|---|
-| `GET / POST` | `/api/v1/admin/rooms` | List / create rooms with an explicit ID |
-| `GET` | `/api/v1/admin/rooms/{id}` | Room detail |
-| `GET` | `/api/v1/admin/rooms/{id}/impact` | Pre-deletion impact counts (schedules, sensors, reservations) |
-| `GET` | `/api/v1/admin/rooms/{id}/timeline` | Reading/occupancy timeline for a room |
+| `GET / POST` | `/api/v1/admin/rooms` | List (any authenticated role) / create rooms with an explicit ID (admin) |
+| `GET` | `/api/v1/admin/rooms/{id}` | Room detail (any authenticated role) |
+| `GET` | `/api/v1/admin/rooms/{id}/impact` | Pre-deletion impact counts (reservations, sensors) |
+| `GET` | `/api/v1/admin/rooms/{id}/timeline` | Reading/occupancy timeline for a room (admin or collaborator) |
 | `GET` | `/api/v1/admin/rooms/check-orphans/{id}` | Check orphan records associated with an ID |
 | `PUT` | `/api/v1/admin/rooms/{id}` | Edit / rename the PK with cascade flags |
 | `PUT` | `/api/v1/admin/rooms/{id}/policy` | Set the per-room control policy (`auto` / `heuristic` / `manual`) |
 | `DELETE` | `/api/v1/admin/rooms/{id}` | Delete a room (historical orphaning of children) |
 | `POST` | `/api/v1/admin/setup-rooms` | Legacy upsert of a room + schedules |
 | `POST` | `/api/v1/admin/model/reload` | Hot-reload the ML bundle from disk (admin) |
-| `GET / POST` | `/api/v1/admin/devices` | List / register sensors |
+| `GET / POST` | `/api/v1/admin/devices` | List (any authenticated role) / register sensors (admin) |
 | `POST` | `/api/v1/admin/sensors` | Provision a sensor (inactive by default) |
 | `PUT` | `/api/v1/admin/sensors/{id}` | Reassign / rename a sensor |
 | `DELETE` | `/api/v1/admin/sensors/{id}` | Remove a sensor device |
 | `GET` | `/api/v1/admin/users` | List users (admin) |
 | `PATCH` | `/api/v1/admin/users/{id}/status` | Change account status (no self-lock) |
-| `GET / POST` | `/api/v1/admin/reservations` | List / create reservations |
-| `PUT / DELETE` | `/api/v1/admin/reservations/{id}` | Edit / cancel a reservation |
+| `GET / POST` | `/api/v1/admin/reservations` | List / create reservations (admin or collaborator; guests denied — exposes usernames/agendas) |
+| `PUT / DELETE` | `/api/v1/admin/reservations/{id}` | Edit / cancel a reservation (admin or collaborator) |
 
 ### Reports (requires admin JWT)
 
@@ -921,13 +932,15 @@ in Tier 2).
 | Role | Access |
 |---|---|
 | `admin` | Everything: users, sensors, reservations, ROI, provisioning |
-| `collaborator` | Dashboard, rooms, own reservations, sensor control (with an active reservation) |
-| `guest` | Dashboard and rooms in read-only mode |
+| `collaborator` | Dashboard, rooms, timeline, CO emergencies, reservations (view all, create, edit, cancel — creation is registered under their own user), sensor control only while holding an active reservation on the sensor's room (`sensors.py:202-216`) |
+| `guest` | Dashboard and rooms in read-only mode — no reservations list (usernames/agendas), no sensor control, no admin panels |
 
 **Approval flow:**
 
 - New accounts with the `guest` role are approved automatically (`status = active`).
 - The `collaborator` and `admin` roles stay `pending` until manual approval from **User Management**.
+
+**Immediate revocation:** `get_current_user` re-reads the account on every request and rejects any non-`active` status with **401** (`dependencies.py:49-54`) — a user deactivated mid-session loses access instantly, without waiting for token expiry, and the frontend's 401 interceptor runs its session-expiry flow. Login itself is also blocked for non-active accounts (`auth.py:35-40`).
 
 ---
 
@@ -950,11 +963,12 @@ IoT reading (POST /sensors/)
     effective = (1−w)·expected + w·actual      (w = FEEDBACK_WEIGHT; actual=None → expected)
         │
         ▼
-  Compute thermal load
-    ├─ ML model (scikit-learn): predict over the Tier 3 bundle contract
-    │    [temperature, hour_of_day, expected_occupancy, actual_occupancy,
-    │     outdoor_temp, floor, volume_m3, ac_btu]
-    └─ Heuristic: effective × 0.05 (fallback if no model.joblib)
+  Compute thermal load (per-room control_policy: auto | heuristic | manual)
+    ├─ manual    → zero offset (hold the configured target, no prediction)
+    ├─ heuristic → effective × 0.05 (also the fallback when no model.joblib)
+    └─ auto + ML model (scikit-learn): predict over the Tier 3 bundle contract
+         [temperature, hour_of_day, expected_occupancy, actual_occupancy,
+          outdoor_temp, floor, volume_m3, ac_btu]
         │
         ▼
   adjusted_target = target_temp − thermal_load
@@ -977,7 +991,7 @@ IoT reading (POST /sensors/)
 | `POSTGRES_PASSWORD` | `postgres` | PostgreSQL password |
 | `POSTGRES_DB` | `climate_db` | PostgreSQL database name |
 | `SECRET_KEY` | *(random in memory)* | JWT signing key — set in production |
-| `ALGORITHM` | `HS256` | JWT algorithm |
+| `ALGORITHM` | — | **Not env-read**: hardcoded to `HS256` in `config.py:24` (docker-compose passes the var, the backend ignores it) |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | JWT token lifetime |
 | `ADMIN_PASSWORD` | `admin` | Initial password for the seeded admin — default is for local dev ONLY; public deployments must set it |
 | `LOCAL_UTC_OFFSET_HOURS` | `-5` | Whole-hour UTC offset to phase-align the diurnal climate drift (America/Lima, no DST) |
