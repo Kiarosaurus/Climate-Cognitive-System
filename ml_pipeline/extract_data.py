@@ -114,6 +114,9 @@ def main():
     docs = list(client["climate_db"]["sensor_readings"].find({}, {"_id": 0}))
     print(f"Found {len(docs)} documents in sensor_readings.")
 
+    # Synthetic rows are tagged is_synthetic=1; train_model.py pins them to the
+    # train slice so the chronological test tail stays 100% real (no leakage of
+    # untimed synthetic rows into the holdout).
     if len(docs) >= 50:
         df = _clean(pd.DataFrame(docs))
         if len(df) < 100:
@@ -128,7 +131,9 @@ def main():
     ROOM_MAP_JSON.write_text(json.dumps(room_map, indent=2), encoding="utf-8")
     print(f"Saved room map ({len(room_map)} rooms) to {ROOM_MAP_JSON}")
 
-    out = df[FEATURES + [TARGET]]
+    # room_id and is_synthetic ride along as diagnostic columns (not model
+    # features): per-room RMSE reporting and the synthetic/real split guard.
+    out = df[FEATURES + [TARGET, "room_id", "is_synthetic"]]
     out.to_csv(OUTPUT_CSV, index=False)
     print(f"Saved {len(out)} rows to {OUTPUT_CSV} (chronological order preserved)")
     print(out.describe().round(3))
@@ -163,7 +168,8 @@ def _clean(df: pd.DataFrame) -> pd.DataFrame:
     df = _extract_expected(df)      # D1: read real plan from cognitive_action
     df = _add_actual(df)
     df[TARGET] = _compute_offset(df)
-    return df[_BASE_COLS + [TARGET]]
+    df["is_synthetic"] = 0
+    return df[_BASE_COLS + [TARGET, "is_synthetic"]]
 
 
 def _extract_expected(df: pd.DataFrame) -> pd.DataFrame:
@@ -178,7 +184,12 @@ def _extract_expected(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _add_actual(df: pd.DataFrame) -> pd.DataFrame:
-    """Feedback signal from CO2, plus a pattern backfill for any missing plan."""
+    """Feedback signal from CO2, plus a pattern backfill for any missing plan.
+
+    NOTE: unlike serving (occupancy_service clamps the estimate to max_capacity),
+    the training estimate is unclamped — seed CO2 derives from real headcounts
+    ≤ capacity, so the residual drift is at most ~1 person of sensor jitter.
+    """
     df["actual_occupancy"] = _people_from_co2(df["co2_ppm"].to_numpy())
 
     rng = np.random.default_rng(0)
@@ -257,6 +268,7 @@ def _generate_synthetic(n: int) -> pd.DataFrame:
         "room_id": room_ids,
         "outdoor_temp": outdoor,
         TARGET: target,
+        "is_synthetic": 1,
     })
     return _attach_metadata(out)     # Tier 3: physical room metadata features
 

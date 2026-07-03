@@ -685,6 +685,16 @@ Values are read from the shipped bundle's `metadata.metrics` (`model.joblib`);
 they are regenerated on every `train_model.py` run and will vary slightly with
 the seeded data.
 
+The label carries irreducible noise σ = 0.08 °C (`extract_data.py`), so the best
+achievable RMSE is ≈ 0.08 — the model at 0.0966 sits near that floor, which also
+rules out overfitting on the synthetic target. Beyond the single holdout, an
+expanding-window `TimeSeriesSplit` CV (3 folds over the real rows) and a per-room
+test RMSE are reported and stored in the bundle metadata.
+
+The gate is enforced at **serve time**: `predictive_service.load_model` refuses
+to serve a bundle whose `beats_baselines` is `false` and stays on the transparent
+heuristic.
+
 Inference features in the Tier 2 bundle were `[temperature, hour_of_day,
 expected_occupancy, actual_occupancy, room_code, outdoor_temp]` — superseded by
 the Tier 3 contract in §3.10, which replaces `room_code` with physical metadata.

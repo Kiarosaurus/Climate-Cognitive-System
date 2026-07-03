@@ -113,3 +113,30 @@ async def test_timezone_aware_timestamp_accepted():
 
 def test_active_engine_reports_heuristic_without_model():
     assert predictive_service.active_engine() == "heuristic"
+
+
+def _dump_bundle(tmp_path, beats: bool):
+    import joblib
+
+    bundle = {
+        "model": object(),  # stand-in estimator; never predicted against in these tests
+        "features": ["temperature"],
+        "room_id_map": {},
+        "metadata": {"metrics": {"beats_baselines": beats}},
+    }
+    path = tmp_path / "model.joblib"
+    joblib.dump(bundle, path)
+    return path
+
+
+def test_load_model_refuses_bundle_that_loses_to_baselines(tmp_path, monkeypatch):
+    # Serve-side gate: beats_baselines=false → bundle rejected, heuristic stays.
+    monkeypatch.setattr(predictive_service, "_MODEL_PATH", _dump_bundle(tmp_path, beats=False))
+    predictive_service.load_model()
+    assert predictive_service.active_engine() == "heuristic"
+
+
+def test_load_model_serves_bundle_that_beats_baselines(tmp_path, monkeypatch):
+    monkeypatch.setattr(predictive_service, "_MODEL_PATH", _dump_bundle(tmp_path, beats=True))
+    predictive_service.load_model()
+    assert predictive_service.active_engine() == "ml"

@@ -12,9 +12,14 @@ bundle["features"] and builds its inference row in that order, so adding/reorder
 features here does not silently break inference.
 
 Validation:
-  - CHRONOLOGICAL holdout (last 20% of rows) — no random shuffle → no time leakage.
+  - CHRONOLOGICAL holdout (last 20% of REAL rows) — no random shuffle → no time
+    leakage. Synthetic bootstrap rows (is_synthetic=1) are pinned to the train
+    slice so the test tail is always real data.
+  - Expanding-window TimeSeriesSplit CV (3 folds) over the real rows — stability
+    check beyond the single holdout.
   - Baselines (predict-mean, heuristic) printed alongside the model; the model must
-    beat both to justify itself.
+    beat both to justify itself. predictive_service.load_model refuses to serve a
+    bundle whose beats_baselines is false (serve-side gate).
 
 Usage (run from project root):
     python ml_pipeline/extract_data.py   # generate data first
@@ -34,6 +39,7 @@ import sklearn
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.inspection import permutation_importance
+from sklearn.model_selection import TimeSeriesSplit
 
 DATA_CSV = Path(__file__).parent / "data" / "features.csv"
 ROOM_MAP_JSON = Path(__file__).parent / "data" / "room_map.json"
@@ -52,6 +58,19 @@ TEST_FRACTION = 0.2
 
 def _rmse(y_true, y_pred) -> float:
     return float(np.sqrt(mean_squared_error(y_true, y_pred)))
+
+
+def _make_model() -> HistGradientBoostingRegressor:
+    # D7 — early stopping on an internal validation split of the training data.
+    return HistGradientBoostingRegressor(
+        max_iter=400,
+        learning_rate=0.05,
+        max_depth=4,
+        early_stopping=True,
+        validation_fraction=0.15,
+        n_iter_no_change=15,
+        random_state=42,
+    )
 
 
 def _heuristic_offset(X: np.ndarray) -> np.ndarray:
@@ -87,27 +106,31 @@ def main():
 
     room_map = json.loads(ROOM_MAP_JSON.read_text(encoding="utf-8")) if ROOM_MAP_JSON.exists() else {}
 
+    # R3 — synthetic bootstrap rows may only train: pin them ahead of the
+    # time-ordered real rows so the chronological test tail stays 100% real.
+    n_synthetic = int(df["is_synthetic"].sum()) if "is_synthetic" in df.columns else 0
+    if n_synthetic:
+        df = pd.concat(
+            [df[df["is_synthetic"] == 1], df[df["is_synthetic"] == 0]],
+            ignore_index=True,
+        )
+        print(f"{n_synthetic} synthetic rows pinned to the train slice.")
+
     X = df[FEATURES]
     y = df[TARGET]
 
-    # D3 — chronological holdout: rows are already time-ordered by extract_data.
-    cut = int(len(df) * (1 - TEST_FRACTION))
+    # D3 — chronological holdout carved from REAL rows only (synthetic, if any,
+    # sits up front). Falls back to a plain tail split when all rows are synthetic.
+    n_real = len(df) - n_synthetic
+    n_test = int((n_real if n_real else len(df)) * TEST_FRACTION) or 1
+    cut = len(df) - n_test
     # Fit on numpy arrays (no column names) so inference — which passes a plain
     # np.array — matches exactly and does not warn about missing feature names.
     X_train, X_test = X.iloc[:cut].to_numpy(), X.iloc[cut:].to_numpy()
     y_train, y_test = y.iloc[:cut], y.iloc[cut:]
-    print(f"Chronological split: {len(X_train)} train / {len(X_test)} test")
+    print(f"Chronological split: {len(X_train)} train / {len(X_test)} test ({n_synthetic} synthetic, train-only)")
 
-    # D7 — early stopping on an internal validation split of the training data.
-    model = HistGradientBoostingRegressor(
-        max_iter=400,
-        learning_rate=0.05,
-        max_depth=4,
-        early_stopping=True,
-        validation_fraction=0.15,
-        n_iter_no_change=15,
-        random_state=42,
-    )
+    model = _make_model()
     model.fit(X_train, y_train)
 
     preds = model.predict(X_test)
@@ -126,6 +149,33 @@ def main():
     beats = rmse < rmse_heur and rmse < rmse_mean
     print(f"Model beats baselines : {'YES' if beats else 'NO — reconsider using ML'}")
 
+    # U6 — expanding-window CV over the time-ordered REAL rows: stability check
+    # beyond the single holdout (mean ± std across folds).
+    cv_rmses: list[float] = []
+    X_real = X.iloc[n_synthetic:].to_numpy()
+    y_real = y.iloc[n_synthetic:].reset_index(drop=True)
+    if len(X_real) >= 50:
+        for tr_idx, te_idx in TimeSeriesSplit(n_splits=3).split(X_real):
+            fold_model = _make_model().fit(X_real[tr_idx], y_real.iloc[tr_idx])
+            cv_rmses.append(_rmse(y_real.iloc[te_idx], fold_model.predict(X_real[te_idx])))
+        print(
+            f"TimeSeriesSplit CV RMSE : {np.mean(cv_rmses):.4f} ± {np.std(cv_rmses):.4f} "
+            f"({len(cv_rmses)} expanding-window folds)"
+        )
+
+    # U7 — per-room test RMSE: shows how evenly the model serves each room and
+    # makes the (modest) contribution of the physical metadata visible.
+    per_room_rmse: dict[str, float] = {}
+    if "room_id" in df.columns:
+        test_rooms = df["room_id"].iloc[cut:].astype(str).reset_index(drop=True)
+        y_test_arr = y_test.to_numpy()
+        for rid in sorted(test_rooms.unique()):
+            mask = (test_rooms == rid).to_numpy()
+            if mask.sum() >= 5:
+                per_room_rmse[rid] = round(_rmse(y_test_arr[mask], preds[mask]), 4)
+        if per_room_rmse:
+            print(f"Per-room test RMSE      : {per_room_rmse}")
+
     print("\nFeature importances (permutation, mean R² drop):")
     perm = permutation_importance(model, X_test, y_test, n_repeats=10, random_state=42)
     for feat, imp in sorted(zip(FEATURES, perm.importances_mean), key=lambda x: -x[1]):
@@ -138,6 +188,7 @@ def main():
         "n_rows": len(df),
         "n_train": len(X_train),
         "n_test": len(X_test),
+        "n_synthetic": n_synthetic,
         "features": FEATURES,
         "target": TARGET,
         "sklearn_version": sklearn.__version__,
@@ -148,6 +199,9 @@ def main():
             "baseline_mean_rmse": round(rmse_mean, 4),
             "baseline_heuristic_rmse": round(rmse_heur, 4),
             "beats_baselines": beats,
+            "cv_rmse_mean": round(float(np.mean(cv_rmses)), 4) if cv_rmses else None,
+            "cv_rmse_std": round(float(np.std(cv_rmses)), 4) if cv_rmses else None,
+            "per_room_rmse": per_room_rmse or None,
         },
     }
     bundle = {

@@ -23,11 +23,12 @@ the occupancy-adjusted target, the system emits ac_status=ON (PRE-COOLING);
 otherwise it emits STANDBY, avoiding unnecessary energy consumption.
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
 
+from app.config import LOCAL_UTC_OFFSET_HOURS
 from app.services.occupancy_service import estimate_actual_occupancy, occupancy_gap
 from app.services.climate_service import outdoor_temp as _outdoor_temp
 from app.services.room_profile import get_metadata as _room_metadata
@@ -71,6 +72,17 @@ def load_model() -> None:
 
         loaded = joblib.load(_MODEL_PATH)
         if isinstance(loaded, dict) and "model" in loaded:
+            # Serve-side gate (D4): a bundle that failed to beat its own baselines
+            # is never served — the transparent heuristic is better-justified.
+            metrics = (loaded.get("metadata") or {}).get("metrics") or {}
+            if metrics.get("beats_baselines") is False:
+                logger.warning(
+                    "ML bundle at %s lost to its baselines (beats_baselines=false) — "
+                    "refusing to serve it; heuristic fallback active. Retrain with "
+                    "better features before shipping.",
+                    _MODEL_PATH,
+                )
+                return
             # New bundle format: model + feature contract + room map + metadata.
             _model = loaded["model"]
             _features = loaded.get("features", _features)
@@ -121,7 +133,8 @@ async def calculate_cooling_demand(
         occupancy telemetry: expected_occupancy, actual_occupancy,
         effective_occupancy, occupancy_gap.
     """
-    expected_people = (room_context or {}).get("expected_people") or 0
+    raw_expected = (room_context or {}).get("expected_people")
+    expected_people = raw_expected or 0
     target_temp = (room_context or {}).get("target_temp")
     policy = (room_context or {}).get("control_policy") or "auto"
     max_capacity = (room_context or {}).get("max_capacity")
@@ -141,8 +154,12 @@ async def calculate_cooling_demand(
             (1 - FEEDBACK_WEIGHT) * expected_people + FEEDBACK_WEIGHT * actual_people
         )
 
-    # Use sensor timestamp hour, stripped of tzinfo to match naive UTC assumption
+    # Time features were trained on naive LOCAL timestamps (the seed data writes
+    # Lima wall-clock times), while the API stamps live readings with naive UTC.
+    # Shift into local time before deriving hour_of_day / outdoor_temp — otherwise
+    # both features carry a phase error of LOCAL_UTC_OFFSET_HOURS (−5 h in Lima).
     ts = reading_timestamp.replace(tzinfo=None) if reading_timestamp.tzinfo else reading_timestamp
+    ts = ts + timedelta(hours=LOCAL_UTC_OFFSET_HOURS)
     hour = ts.hour
 
     # Per-room policy decides the engine:
@@ -164,7 +181,9 @@ async def calculate_cooling_demand(
         feat_values = {
             "temperature": current_temp,
             "hour_of_day": hour,
-            "expected_occupancy": expected_people,
+            # Missing plan is NaN (HGBR-native missing), matching training's
+            # convention — 0 would mean "a plan for zero people", a different thing.
+            "expected_occupancy": float("nan") if raw_expected is None else expected_people,
             "actual_occupancy": actual_feature,
             "room_code": _room_map.get(str(room_context.get("room_id")), -1),  # legacy bundles
             "outdoor_temp": _outdoor_temp(ts),   # exogenous climate driver (Tier 2)
