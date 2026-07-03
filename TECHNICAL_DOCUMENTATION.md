@@ -143,11 +143,13 @@ Climate-Cognitive-System/
 | `src/views/RoomSearch.tsx` | **Room listing** | Table / grid with real-time AC status |
 | `src/views/RoomDetail.tsx` | **Room detail** | Reading history + physical sensor toggle (RBAC with active reservation) |
 | `src/views/SensorSearch.tsx` | **Sensor inventory** | `SensorDevice` catalog (admin only) |
-| `src/views/Devices.tsx` / `AddDevices.tsx` | **Provisioning** | Hardware registration (rooms + sensors) in an initially inactive state |
-| `src/views/Infrastructure.tsx` | **Dual-Panel management** | Dual Rooms ↔ Sensors panel with CRUD + orphan logic |
+| `src/views/Infrastructure.tsx` | **Dual-Panel management** | Dual Rooms ↔ Sensors panel with CRUD + orphan logic (supersedes the removed legacy `Devices.tsx` / `AddDevices.tsx` views, see §3.3) |
 | `src/views/Reservations.tsx` | **Reservations** | `Reservation` CRUD with schedule validation |
+| `src/views/Register.tsx` | **Auth UI** | Account-creation form with role selection (guest auto-approved) |
 | `src/views/UserManagement.tsx` | **User management** | Approval / rejection of pending accounts (admin only) |
 | `src/views/ROIReport.tsx` | **ROI dashboard** | Energy KPIs, Traditional vs. Cognitive `BarChart`, model summary |
+| `src/components/EmptyState.tsx` / `Logo.tsx` / `MetricCard.tsx` | **UI widgets** | Empty-list placeholder, brand mark, dashboard stat card |
+| `src/utils/sensorColors.ts` | **UI tokens** | Shared reading-level color thresholds used across tables and cards |
 | `src/views/Register.tsx` | **Public registration** | Auto-approval of the `guest` role; `collaborator` / `admin` stay `pending` |
 
 ### 2.3 `database/` — Database initialization
@@ -201,36 +203,36 @@ See section [3.8](#38-utec-seed-dataset-seed_data) for the attendance-model deta
 
 **Problem:** The `GlobalDashboard.tsx` component includes a **manual telemetry simulator** (developer zone) controlled by an `autoMode` toggle. Without disciplined management of the `setInterval` lifecycle, turning the toggle off left the previous interval alive in memory, **injecting junk readings** into MongoDB even with the simulator "off" from the user's perspective. This pattern is known as a **Ghost Interval**.
 
-**Implemented solution** (`frontend/src/views/GlobalDashboard.tsx:108-125`):
+**Implemented solution** (`frontend/src/views/GlobalDashboard.tsx:254-271`):
 
 ```tsx
+// Sim mode: auto-generate synthetic readings every 4s while the toggle is on.
 useEffect(() => {
-  if (!autoMode) return   // guard: toggle is off — do not start any interval
+  if (mode !== 'sim' || !autoMode) return   // guard: only runs in sim mode with auto on
 
   const interval = setInterval(() => {
-    if (!autoMode) return  // inner guard: stale-closure safety — skip if somehow off
     sendReading({
       sensor_id: SENSOR_IDS[Math.floor(Math.random() * SENSOR_IDS.length)],
       temperature: parseFloat((15 + Math.random() * 30).toFixed(1)),
-      humidity:    parseFloat((30 + Math.random() * 65).toFixed(1)),
-      co2_ppm:     parseFloat((350 + Math.random() * 1500).toFixed(0)),
-      co_ppm:      parseFloat(
+      humidity: parseFloat((30 + Math.random() * 65).toFixed(1)),
+      co2_ppm: parseFloat((350 + Math.random() * 1500).toFixed(0)),
+      co_ppm: parseFloat(
         (Math.random() < 0.1 ? 55 + Math.random() * 95 : Math.random() * 10).toFixed(1)
       ),
     })
   }, 4_000)
 
-  return () => clearInterval(interval)  // fires on toggle-off AND on unmount
-}, [autoMode, sendReading])
+  return () => clearInterval(interval)  // fires on toggle-off, mode switch AND unmount
+}, [mode, autoMode, sendReading])
 ```
 
 **Mechanics:**
 
-1. **Outer guard** — If `autoMode` is `false`, the `useEffect` returns immediately without scheduling anything.
+1. **Guard** — The effect schedules nothing unless the dashboard is in **sim mode** AND the `autoMode` toggle is on (`mode !== 'sim' || !autoMode` → early return). Switching to real-sensor mode or flipping the toggle both disqualify the interval.
 2. **Cleanup function** — The returned function (`() => clearInterval(interval)`) is run automatically by React when:
-   - Any dependency in the `[autoMode, sendReading]` array changes (toggle to `off` → the effect re-runs and clears the previous interval).
+   - Any dependency in the `[mode, autoMode, sendReading]` array changes (toggle off or mode switch → the effect re-runs, clears the previous interval, and the guard prevents a new one).
    - The component **unmounts** (navigating to another route or logging out).
-3. **Inner guard (stale-closure safety)** — The `if (!autoMode) return` inside the `setInterval` callback protects against the pathological case where, due to a captured **closure**, the callback runs with a stale value in the exact window between toggle-off and `clearInterval`.
+3. **No stale-closure window** — Because the interval is cleared synchronously by the cleanup before the effect re-evaluates, no callback can fire with a stale `autoMode`; no inner guard is needed inside the callback.
 
 **Result:** Zero ghost readings. When the toggle flips, MongoDB stops receiving inserts on the next tick (≤ 4 s).
 
@@ -290,7 +292,7 @@ It is considered **real** only if `is_simulated` is strictly `False` **AND** bot
 
 ### 3.3 Dual-Panel Infrastructure Management
 
-**Problem:** The legacy `Devices.tsx` and `AddDevices.tsx` views split room management and sensor management into independent tabs. This forced the admin to **switch mental context** between two routes for an intrinsically coupled operation (a sensor belongs to a room).
+**Problem:** The legacy `Devices.tsx` and `AddDevices.tsx` views (since removed from the codebase) split room management and sensor management into independent tabs. This forced the admin to **switch mental context** between two routes for an intrinsically coupled operation (a sensor belongs to a room).
 
 **Implemented solution** (`frontend/src/views/Infrastructure.tsx`):
 
@@ -349,7 +351,7 @@ The FK **is kept** on `schedules.room_id` because schedules are **tightly-couple
 
 #### 3.4.2 `DELETE /admin/rooms/{room_id}` endpoint
 
-(`backend/app/routes/admin.py:259-287`)
+(`backend/app/routes/admin.py:315`)
 
 ```python
 @router.delete("/rooms/{room_id}", status_code=200)
@@ -386,7 +388,7 @@ if (data.has_orphans) {
 }
 ```
 
-The `GET /admin/rooms/check-orphans/{room_id}` endpoint (`backend/app/routes/admin.py:122-140`) responds:
+The `GET /admin/rooms/check-orphans/{room_id}` endpoint (`backend/app/routes/admin.py:132`) responds:
 
 ```json
 {
@@ -867,16 +869,22 @@ in Tier 2).
 |---|---|---|
 | `GET / POST` | `/api/v1/admin/rooms` | List / create rooms with an explicit ID |
 | `GET` | `/api/v1/admin/rooms/{id}` | Room detail |
+| `GET` | `/api/v1/admin/rooms/{id}/impact` | Pre-deletion impact counts (schedules, sensors, reservations) |
+| `GET` | `/api/v1/admin/rooms/{id}/timeline` | Reading/occupancy timeline for a room |
 | `GET` | `/api/v1/admin/rooms/check-orphans/{id}` | Check orphan records associated with an ID |
 | `PUT` | `/api/v1/admin/rooms/{id}` | Edit / rename the PK with cascade flags |
+| `PUT` | `/api/v1/admin/rooms/{id}/policy` | Set the per-room control policy (`auto` / `heuristic` / `manual`) |
 | `DELETE` | `/api/v1/admin/rooms/{id}` | Delete a room (historical orphaning of children) |
 | `POST` | `/api/v1/admin/setup-rooms` | Legacy upsert of a room + schedules |
+| `POST` | `/api/v1/admin/model/reload` | Hot-reload the ML bundle from disk (admin) |
 | `GET / POST` | `/api/v1/admin/devices` | List / register sensors |
 | `POST` | `/api/v1/admin/sensors` | Provision a sensor (inactive by default) |
 | `PUT` | `/api/v1/admin/sensors/{id}` | Reassign / rename a sensor |
+| `DELETE` | `/api/v1/admin/sensors/{id}` | Remove a sensor device |
 | `GET` | `/api/v1/admin/users` | List users (admin) |
 | `PATCH` | `/api/v1/admin/users/{id}/status` | Change account status (no self-lock) |
 | `GET / POST` | `/api/v1/admin/reservations` | List / create reservations |
+| `PUT / DELETE` | `/api/v1/admin/reservations/{id}` | Edit / cancel a reservation |
 
 ### Reports (requires admin JWT)
 
@@ -927,7 +935,9 @@ IoT reading (POST /sensors/)
         │
         ▼
   Compute thermal load
-    ├─ ML model (scikit-learn): predict([temp, hour, expected, actual])
+    ├─ ML model (scikit-learn): predict over the Tier 3 bundle contract
+    │    [temperature, hour_of_day, expected_occupancy, actual_occupancy,
+    │     outdoor_temp, floor, volume_m3, ac_btu]
     └─ Heuristic: effective × 0.05 (fallback if no model.joblib)
         │
         ▼
@@ -946,13 +956,14 @@ IoT reading (POST /sensors/)
 | Variable | Default | Description |
 |---|---|---|
 | `MONGO_URI` | `mongodb://mongo:27017` | MongoDB connection URI |
-| `POSTGRES_URI` | `postgresql://postgres:postgres@postgres:5432/climate_db` | PostgreSQL URI (composed via compose) |
+| `POSTGRES_URI` | `postgresql://postgres:postgres@localhost:5432/climate_db` | PostgreSQL URI — code default targets `localhost`; docker-compose overrides it to the `postgres` service name |
 | `POSTGRES_USER` | `postgres` | PostgreSQL user |
 | `POSTGRES_PASSWORD` | `postgres` | PostgreSQL password |
 | `POSTGRES_DB` | `climate_db` | PostgreSQL database name |
 | `SECRET_KEY` | *(random in memory)* | JWT signing key — set in production |
 | `ALGORITHM` | `HS256` | JWT algorithm |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | JWT token lifetime |
+| `LOCAL_UTC_OFFSET_HOURS` | `-5` | Whole-hour UTC offset to phase-align the diurnal climate drift (America/Lima, no DST) |
 | `WATSON_API_KEY` | `""` | IBM Watson Assistant API key |
 | `WATSON_URL` | `""` | Watson instance endpoint |
 | `WATSON_ASSISTANT_ID` | `""` | Watson assistant ID |
