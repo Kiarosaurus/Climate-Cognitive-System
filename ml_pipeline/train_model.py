@@ -41,6 +41,8 @@ from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.inspection import permutation_importance
 from sklearn.model_selection import TimeSeriesSplit
 
+from common import bootstrap_people_load
+
 DATA_CSV = Path(__file__).parent / "data" / "features.csv"
 ROOM_MAP_JSON = Path(__file__).parent / "data" / "room_map.json"
 MODEL_OUTPUT = Path(__file__).parent.parent / "backend" / "app" / "ml" / "model.joblib"
@@ -76,14 +78,13 @@ def _make_model() -> HistGradientBoostingRegressor:
 def _heuristic_offset(X: np.ndarray) -> np.ndarray:
     """Occupancy-only bootstrap heuristic — the baseline the ML model must beat.
 
-    Deliberately blind to outdoor_temp and room_code, so the model can win by using
-    them. X columns are in FEATURES order.
+    Deliberately blind to outdoor_temp and room metadata, so the model can win by
+    using them. X columns are in FEATURES order. Formula shared with the label
+    builder via ml_pipeline/common.py — they must stay numerically identical.
     """
     hour = X[:, FEATURES.index("hour_of_day")]
     actual = X[:, FEATURES.index("actual_occupancy")]
-    hour_weight = 1 + 0.3 * np.sin((hour - 8) * np.pi / 12)
-    people_load = actual * 0.05 * hour_weight
-    return np.maximum(0, people_load)
+    return np.maximum(0, bootstrap_people_load(actual, hour))
 
 
 def main():
@@ -101,8 +102,6 @@ def main():
 
     df = pd.read_csv(DATA_CSV)
     print(f"Loaded {len(df)} rows from {DATA_CSV}")
-
-    df["expected_occupancy"] = df["expected_occupancy"].replace(-1, np.nan)
 
     room_map = json.loads(ROOM_MAP_JSON.read_text(encoding="utf-8")) if ROOM_MAP_JSON.exists() else {}
 

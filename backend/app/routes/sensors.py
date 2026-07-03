@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
-from app.config import LOCAL_UTC_OFFSET_HOURS
+from app.core.timeutils import local_now
 from app.models.sensor import SensorReading
 from app.models.admin import SensorDevice, Reservation, User, Room
 from app.services.data_service import process_reading
@@ -119,18 +119,17 @@ async def get_co_emergencies(
         if sid not in seen:
             seen[sid] = doc
 
-    # Enrich with room names from SQL
+    # Enrich with room names from SQL — one threadpool hop for both queries:
+    # this endpoint is polled every 5 s per client.
     sensor_ids = list(seen.keys())
-    devices = await run_in_threadpool(
-        lambda: db_sql.query(SensorDevice).filter(SensorDevice.id.in_(sensor_ids)).all()
-    )
-    device_to_room: dict[str, str] = {d.id: d.room_id for d in devices}
 
-    room_ids = list({d.room_id for d in devices})
-    rooms = await run_in_threadpool(
-        lambda: db_sql.query(Room).filter(Room.id.in_(room_ids)).all()
-    )
-    room_name_map: dict[str, str] = {r.id: r.name for r in rooms}
+    def _load_sql_context() -> tuple[dict[str, str], dict[str, str]]:
+        devices = db_sql.query(SensorDevice).filter(SensorDevice.id.in_(sensor_ids)).all()
+        room_ids = list({d.room_id for d in devices})
+        rooms = db_sql.query(Room).filter(Room.id.in_(room_ids)).all()
+        return {d.id: d.room_id for d in devices}, {r.id: r.name for r in rooms}
+
+    device_to_room, room_name_map = await run_in_threadpool(_load_sql_context)
 
     real: list[dict] = []
     simulated: list[dict] = []
@@ -202,12 +201,8 @@ def control_sensor(
     # collaborators need an active reservation on this room
     if current_user.role == "collaborator":
         # Reservations are stored in LOCAL wall-clock time (same convention as
-        # schedules) — shift the UTC clock into local before the window check,
-        # otherwise a 17-18h Lima reservation only "works" at 12-13h.
-        now = (
-            datetime.now(timezone.utc).replace(tzinfo=None)
-            + timedelta(hours=LOCAL_UTC_OFFSET_HOURS)
-        )
+        # schedules) — see app.core.timeutils.
+        now = local_now()
         active = db_sql.query(Reservation).filter(
             Reservation.user_id == current_user.id,
             Reservation.room_id == device.room_id,

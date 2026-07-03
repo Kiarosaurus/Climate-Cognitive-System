@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timedelta
 from starlette.concurrency import run_in_threadpool
-from app.config import LOCAL_UTC_OFFSET_HOURS
+from app.core.timeutils import to_local
 from app.models.sensor import SensorReading
 from app.services.predictive_service import calculate_cooling_demand
 
@@ -45,12 +45,10 @@ def get_room_context(db_sql, sensor_id: str, reading_timestamp: datetime) -> dic
 
     room = device.room
 
-    # Strip tzinfo so .time()/.weekday() are naive — matches PG Time column.
     # Schedules are stored in LOCAL wall-clock time while the API stamps readings
-    # with naive UTC, so shift into local time first (LOCAL_UTC_OFFSET_HOURS) —
-    # otherwise a 17-18h Lima class (22-23h UTC) never matches its schedule.
-    now = reading_timestamp.replace(tzinfo=None) if reading_timestamp.tzinfo else reading_timestamp
-    now = now + timedelta(hours=LOCAL_UTC_OFFSET_HOURS)
+    # with naive UTC — shift first (see app.core.timeutils), otherwise a 17-18h
+    # Lima class (22-23h UTC) never matches its schedule.
+    now = to_local(reading_timestamp)
     # Feed-forward: match a schedule that starts within the next PRECOOL window,
     # so pre-cooling can begin before the class does. (A lookahead that crosses
     # midnight misses — acceptable, no classes straddle midnight.)

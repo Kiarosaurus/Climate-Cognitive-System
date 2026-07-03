@@ -34,23 +34,25 @@ import pandas as pd
 from pathlib import Path
 from pymongo import MongoClient
 
-# Import the shared climate + room-profile models (single source of assumptions).
+# Import the shared climate + room-profile + occupancy models and the bootstrap
+# label helper (single source of every assumption — nothing is mirrored by hand).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 from app.services.climate_service import outdoor_temp as _outdoor_temp  # noqa: E402
+from app.services.occupancy_service import (  # noqa: E402
+    CO2_BASELINE_PPM,
+    CO2_PPM_PER_PERSON,
+)
 from app.services.room_profile import (  # noqa: E402
     METADATA_FEATURES,
     get_metadata,
     thermal_factor,
 )
+from common import bootstrap_people_load  # noqa: E402
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 DATA_DIR = Path(__file__).parent / "data"
 OUTPUT_CSV = DATA_DIR / "features.csv"
 ROOM_MAP_JSON = DATA_DIR / "room_map.json"
-
-# CO2 mass-balance constants — MUST mirror backend/app/services/occupancy_service.py
-CO2_BASELINE_PPM = 420.0
-CO2_PPM_PER_PERSON = 25.0
 
 # Columns persisted to the CSV. room_code (opaque) is replaced by physical room
 # metadata features (Tier 3); outdoor_temp is the exogenous climate driver (Tier 2).
@@ -209,8 +211,7 @@ def _compute_offset(df: pd.DataFrame) -> pd.Series:
     # Cooling demand = (occupancy load + EXOGENOUS climate load) scaled by the
     # room's thermal mass. The occupancy-only heuristic baseline sees neither the
     # outdoor term nor the room factor — that is what lets the ML model win.
-    hour_weight = 1 + 0.3 * np.sin((df["hour_of_day"] - 8) * np.pi / 12)
-    people_load = df["actual_occupancy"] * 0.05 * hour_weight
+    people_load = bootstrap_people_load(df["actual_occupancy"], df["hour_of_day"])
     climate_load = np.maximum(0, (df["outdoor_temp"] - CLIMATE_BASELINE_C)) * CLIMATE_GAIN
     room_factor = _room_factor(df["room_id"])
     noise = np.random.default_rng(1).normal(0, 0.08, len(df))
@@ -250,8 +251,7 @@ def _generate_synthetic(n: int) -> pd.DataFrame:
     outdoor = np.round(rng.uniform(15.0, 30.0, n), 2)
 
     room_ids = rng.choice(_SYNTH_ROOMS, n)
-    hour_weight = 1 + 0.3 * np.sin((hours - 8) * np.pi / 12)
-    people_load = actual * 0.05 * hour_weight
+    people_load = bootstrap_people_load(actual, hours)
     climate_load = np.maximum(0, (outdoor - CLIMATE_BASELINE_C)) * CLIMATE_GAIN
     room_factor = _room_factor(pd.Series(room_ids))
     noise = rng.normal(0, 0.08, n)

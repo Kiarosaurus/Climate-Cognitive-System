@@ -5,6 +5,7 @@ import {
   Calendar, DoorOpen, Trash2, TriangleAlert,
 } from 'lucide-react'
 import api, { getApiErrorDetail } from '../api/client'
+import { NUM_INPUT_MODS } from '../utils/formStyles'
 import SearchableSelect from '../components/SearchableSelect'
 
 interface Room { id: number; name: string; max_capacity: number }
@@ -266,7 +267,7 @@ export default function Reservations() {
   // ── Shared style tokens ───────────────────────────────────────────────────
 
   const inputCls = "w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 transition placeholder-slate-500"
-  const numInputCls = `${inputCls} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`
+  const numInputCls = `${inputCls} ${NUM_INPUT_MODS}`
   const labelCls = "block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide"
 
   const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [

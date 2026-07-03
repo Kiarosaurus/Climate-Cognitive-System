@@ -23,12 +23,12 @@ the occupancy-adjusted target, the system emits ac_status=ON (PRE-COOLING);
 otherwise it emits STANDBY, avoiding unnecessary energy consumption.
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 
-from app.config import LOCAL_UTC_OFFSET_HOURS
+from app.core.timeutils import to_local
 from app.services.occupancy_service import estimate_actual_occupancy, occupancy_gap
 from app.services.climate_service import outdoor_temp as _outdoor_temp
 from app.services.room_profile import get_metadata as _room_metadata
@@ -156,10 +156,9 @@ async def calculate_cooling_demand(
 
     # Time features were trained on naive LOCAL timestamps (the seed data writes
     # Lima wall-clock times), while the API stamps live readings with naive UTC.
-    # Shift into local time before deriving hour_of_day / outdoor_temp — otherwise
-    # both features carry a phase error of LOCAL_UTC_OFFSET_HOURS (−5 h in Lima).
-    ts = reading_timestamp.replace(tzinfo=None) if reading_timestamp.tzinfo else reading_timestamp
-    ts = ts + timedelta(hours=LOCAL_UTC_OFFSET_HOURS)
+    # Shift before deriving hour_of_day / outdoor_temp (see app.core.timeutils) —
+    # otherwise both features carry a 5 h phase error.
+    ts = to_local(reading_timestamp)
     hour = ts.hour
 
     # Per-room policy decides the engine:

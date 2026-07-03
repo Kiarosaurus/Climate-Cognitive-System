@@ -125,7 +125,6 @@ def hilo_serial():
 # ── Thread 2: camera + occupancy counting ──────────────────
 def hilo_camara():
     mp_face = mp.solutions.face_detection
-    mp_draw = mp.solutions.drawing_utils
 
     cap = cv2.VideoCapture(CAMERA_INDEX)
     if not cap.isOpened():
@@ -133,9 +132,8 @@ def hilo_camara():
         return
 
     # Simple tracking: list of centroids from the previous frame
-    # each item: {"cx": x, "lado": "izq"/"der", "vivo": True/False}
+    # each item: {"cx": x, "lado": "izq"/"der", "frames_sin_ver": int}
     tracks = []
-    next_id = 0
     aforo = 0
 
     with mp_face.FaceDetection(model_selection=0, min_detection_confidence=0.6) as detector:

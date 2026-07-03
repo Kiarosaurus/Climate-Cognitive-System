@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
-from app.config import LOCAL_UTC_OFFSET_HOURS
+from app.core.timeutils import to_local
 from app.database import get_db
 from app.database_sql import get_db_sql
 from app.models.admin import Room, Schedule, SensorDevice, Reservation, User, STATUSES, CONTROL_POLICIES
@@ -174,8 +174,7 @@ def update_room_policy(
     Admin-only. Dedicated endpoint so changing policy never touches the heavier
     rename/edit path in update_room.
     """
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin role required to change the control policy.")
+    _require_admin(current_user)
     if payload.control_policy not in CONTROL_POLICIES:
         raise HTTPException(status_code=422, detail=f"Invalid control_policy. Use one of: {sorted(CONTROL_POLICIES)}.")
     room = db.query(Room).filter(Room.id == room_id).first()
@@ -199,8 +198,7 @@ def reload_model(current_user: User = Depends(get_current_user)):
     Run the training pipeline (ml_pipeline/extract_data.py → train_model.py) to
     regenerate model.joblib, then call this to pick it up live. Admin-only.
     """
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin role required to reload the model.")
+    _require_admin(current_user)
     from app.services.predictive_service import load_model, active_engine
     load_model()
     engine = active_engine()
@@ -783,10 +781,6 @@ def update_reservation(
 _DIURNAL_AMPLITUDE_C = 1.5
 _OCCUPANCY_TREND_BUMP_C = 0.08
 _BASELINE_LOOKBACK_HOURS = 3
-# Deployment-local UTC offset used only to phase-align the diurnal drift so its peak
-# falls in the local afternoon (~15:00) instead of 15:00 UTC. Sourced from config
-# (LOCAL_UTC_OFFSET_HOURS, default -5 = America/Lima — Barranco, UTEC).
-_LOCAL_UTC_OFFSET_HOURS = LOCAL_UTC_OFFSET_HOURS
 # Hardware contract: AC always boots at 20.0°C when transitioning to ON. Any OFF→ON
 # edge re-applies this factory default until the AI emits a new cognitive_action.target.
 AC_FACTORY_DEFAULT_C = 20.0
@@ -833,9 +827,9 @@ def _compute_past_ac_state(events: list) -> tuple[str, Optional[float]]:
 
 
 def _timeline_expected_people(schedules: list, anchor: datetime) -> int:
-    # Schedules are stored in LOCAL wall-clock time; the anchor is UTC. Shift the
-    # FULL datetime — the weekday changes too (Tue 20:00 Lima == Wed 01:00 UTC).
-    local = anchor.replace(tzinfo=None) + timedelta(hours=_LOCAL_UTC_OFFSET_HOURS)
+    # Schedules are stored in LOCAL wall-clock time; the anchor is UTC
+    # (see app.core.timeutils — the weekday changes with the shift too).
+    local = to_local(anchor)
     dow = local.weekday()
     hhmm = local.time()
     for s in schedules:
@@ -846,7 +840,7 @@ def _timeline_expected_people(schedules: list, anchor: datetime) -> int:
 
 def _timeline_reservation_for(reservations: list, anchor_naive: datetime) -> Optional[dict]:
     # Reservations are stored in LOCAL wall-clock time; anchor_naive is naive UTC.
-    local = anchor_naive + timedelta(hours=_LOCAL_UTC_OFFSET_HOURS)
+    local = to_local(anchor_naive)
     for r in reservations:
         if r.start_time <= local < r.end_time:
             return {
@@ -1015,8 +1009,8 @@ async def get_room_timeline(
                 }
         else:
             # Diurnal sine phased on *local* time so the peak lands in the local afternoon
-            # (~15:00) and the trough at night (~03:00). anchor.hour is UTC; shift to local.
-            local_hour = (anchor.hour + _LOCAL_UTC_OFFSET_HOURS) % 24
+            # (~15:00) and the trough at night (~03:00). anchor is UTC; shift to local.
+            local_hour = to_local(anchor).hour
             drift = _DIURNAL_AMPLITUDE_C * math.sin((local_hour - 9) / 24.0 * 2 * math.pi)
             expected_people = _timeline_expected_people(schedules, anchor)
             occupancy_offset = expected_people * _OCCUPANCY_TREND_BUMP_C
