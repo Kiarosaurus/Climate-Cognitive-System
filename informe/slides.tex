@@ -112,14 +112,14 @@
       \end{itemize}
     \end{column}
     \begin{column}{0.5\textwidth}
-      \textbf{Hardware (ESP32 / RPi)}
+      \textbf{Hardware (Arduino UNO)}
       \begin{itemize}\small
-        \item DHT22 --- temperatura / humedad
-        \item MH-Z19B --- CO\textsubscript{2} $\rightarrow$ ocupación
-        \item MQ-7 --- monóxido de carbono
-        \item Emisor IR --- control del A/C
+        \item DHT11 --- temperatura / humedad
+        \item MQ-135 --- CO\textsubscript{2} $\rightarrow$ ocupación
+        \item MQ-7 --- monóxido de carbono (ADC $\rightarrow$ ppm)
+        \item Cámara + MediaPipe --- aforo
       \end{itemize}
-      \footnotesize Envío \texttt{POST /sensors/} cada ${\sim}30$\,s.
+      \footnotesize Serial $\rightarrow$ \texttt{hardware/sistema.py} $\rightarrow$ \texttt{POST /sensors/} cada ${\sim}2$\,s.
     \end{column}
   \end{columns}
 \end{frame}
@@ -158,7 +158,7 @@
     \node[box,above right=4mm and 10mm of api](mongo){MongoDB};
     \node[box,below right=4mm and 10mm of api](pg){PostgreSQL};
     \node[ia,right=28mm of api](ml){Modelo ML\\+ Watson};
-    \node[hw,below=12mm of app](hw){Sensores + ESP32};
+    \node[hw,below=12mm of app](hw){Arduino UNO + Cámara};
     \draw[arr](u)--(app); \draw[arr](a)--(app);
     \draw[arr]([yshift=1mm]app.east)--([yshift=1mm]api.west);
     \draw[arr]([yshift=-1mm]api.west)--([yshift=-1mm]app.east);
@@ -178,8 +178,8 @@
     Frontend & React 18, Vite, TypeScript, Tailwind, Recharts \\
     Backend  & FastAPI, SQLAlchemy; JWT + Argon2 \\
     Datos    & PostgreSQL 15, MongoDB 6 \\
-    IA       & scikit-learn, IBM Watson Assistant \\
-    Hardware & ESP32 / Raspberry Pi, DHT22, MH-Z19B, MQ-7, IR \\
+    IA       & scikit-learn, IBM Watson Assistant, MediaPipe \\
+    Hardware & Arduino UNO, DHT11, MQ-135, MQ-7, cámara \\
     Deploy   & Docker + Docker Compose, Nginx \\
     \bottomrule
   \end{tabular}
@@ -217,6 +217,8 @@
   \begin{tabular}{rl}
     \textbf{Repositorio GitHub:} &
       \href{https://github.com/Kiarosaurus/Climate-Cognitive-System}{\color{ccsblue}github.com/Kiarosaurus/Climate-Cognitive-System} \\[6pt]
+    \textbf{Instancia desplegada:} &
+      \href{https://kiarosaurus.me}{\color{ccsblue}kiarosaurus.me} \\[6pt]
     \textbf{Videos (SW y HW):} &
       \href{https://drive.google.com/drive/folders/1n6j4DU4aDTeXRAdlSHInQun2IR3O-uuh?usp=sharing}{\color{ccsblue}Google Drive --- Demos de Software y Hardware} \\
   \end{tabular}

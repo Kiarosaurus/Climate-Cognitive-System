@@ -98,6 +98,9 @@ Climate-Cognitive-System/
 │   ├── generate_dataset.py
 │   ├── DATASET_GUIDE.md
 │   └── output/            # (generated, not versioned)
+├── hardware/
+│   ├── sistema.py         # Arduino UNO Serial → camera occupancy → HTTPS gateway
+│   └── README.md          # wiring, calibration and run instructions
 ├── informe/
 │   ├── informe.tex        # Spanish project report (rubric)
 │   ├── slides.tex         # Spanish presentation (beamer)
@@ -171,6 +174,13 @@ Climate-Cognitive-System/
 | `output/` | (dry-run) `sensor_readings.json` + `catalog.json` — reproducible, not versioned |
 
 See section [3.8](#38-utec-seed-dataset-seed_data) for the attendance-model detail.
+
+### 2.5b `hardware/` — Physical sensor node (classroom A403)
+
+| File | Purpose |
+|---|---|
+| `sistema.py` | Client-side gateway: reads the **Arduino UNO** (DHT11, MQ-135, MQ-7) over Serial as JSON, counts room occupancy with the laptop camera (**MediaPipe Face Detection**, virtual-line crossing), converts the MQ-7 raw ADC value to CO ppm via the datasheet curve, and POSTs the merged reading to the deployed backend (`/api/v1/sensors/`) |
+| `README.md` | Components, data flow, MQ-7 clean-air calibration and run instructions |
 
 > ⚠️ **Feature contract:** the model is saved as a **bundle** with a `features` list. `predictive_service.py` reads `bundle["features"]` and assembles the inference row in that order (a `feat → value` map), so reordering/adding features does not silently break inference. `room_id_map` translates `room_id → room_code`; an unknown room at inference uses code `-1`. The legacy format (a bare estimator) is still supported with the default 4-feature order.
 
@@ -790,8 +800,8 @@ stateless. They remain future work if a history buffer is added.
 
 ### To-Do
 
-- [ ] Cloud deployment (AWS ECS / GCP Cloud Run)
-- [ ] Physical integration of the Python simulation script on a **Raspberry Pi**
+- [x] Cloud deployment — live at **https://kiarosaurus.me** (Docker Compose + Nginx + Let's Encrypt)
+- [x] Physical sensor node — **Arduino UNO** (DHT11, MQ-135, MQ-7) + camera occupancy count via `hardware/sistema.py` (section 2.5b)
 - [ ] Calibration of the **infrared emitter** for real AC control
 - [ ] Setup of **persistent Ngrok tunnels** for the Watson Extension (custom extension in production)
 - [ ] Email notifications when approving/rejecting pending users

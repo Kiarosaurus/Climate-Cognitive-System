@@ -28,6 +28,7 @@
 \usetikzlibrary{shapes.geometric,arrows.meta,positioning,fit,backgrounds,calc}
 \usepackage[hidelinks]{hyperref}
 \usepackage{titlesec}
+\usepackage{float}
 
 \definecolor{ccsblue}{HTML}{1F6FEB}
 \definecolor{ccsdark}{HTML}{0B2545}
@@ -134,7 +135,7 @@ emergencias por monóxido de carbono.
 
 El sistema implementa control de acceso por roles (RBAC) de tres niveles.
 
-\begin{table}[h]\centering\small
+\begin{table}[H]\centering\small
 \begin{tabular}{@{}L{2.6cm}L{12.2cm}@{}}
 \toprule
 \textbf{Perfil} & \textbf{Acciones principales} \\
@@ -186,23 +187,26 @@ espejo con la autorización del backend.
 % ============================ 5. HARDWARE ==================================
 \section{Hardware a utilizar}
 
-La telemetría se captura con sensores de bajo costo sobre un microcontrolador
-que la envía al backend por HTTP. En la versión actual se cuenta con un nodo
-sensor funcional --- su montaje y operación se evidencian en los videos de
+La telemetría se captura con sensores de bajo costo sobre un
+\textbf{Arduino UNO} que emite las lecturas por puerto serial a un equipo
+puente. En la versión actual se cuenta con un nodo sensor funcional instalado
+en el aula A403 --- el script del gateway está versionado en el repositorio
+(\texttt{hardware/sistema.py}) y su montaje se evidencia en los videos de
 demostración enlazados en §\ref{sec:recursos} ---; el resto del despliegue se
 modela mediante un simulador y un dataset sembrado reproducible
 (ver §\ref{sec:viab}).
 
-\begin{table}[h]\centering\small
+\begin{table}[H]\centering\small
 \begin{tabular}{@{}L{2.6cm}L{3.4cm}L{4.2cm}L{3.4cm}@{}}
 \toprule
 \textbf{Dispositivo} & \textbf{Función} & \textbf{Datos que captura} & \textbf{Frecuencia} \\
 \midrule
-DHT22 & Ambiente térmico & Temperatura (°C), humedad (\%) & \textasciitilde 30 s \\
-MH-Z19B & Calidad de aire & CO\textsubscript{2} (ppm) $\rightarrow$ ocupación real & \textasciitilde 30 s \\
-MQ-7 & Seguridad & Monóxido de carbono CO (ppm) & \textasciitilde 30 s \\
+DHT11 & Ambiente térmico & Temperatura (°C), humedad (\%) & \textasciitilde 2 s \\
+MQ-135 & Calidad de aire & CO\textsubscript{2} (ppm, proxy) $\rightarrow$ ocupación real & \textasciitilde 2 s \\
+MQ-7 & Seguridad & CO (ADC $\rightarrow$ ppm, curva calibrada) & \textasciitilde 2 s \\
+Cámara + MediaPipe & Aforo & Conteo de personas por cruce de línea & tiempo real \\
 Emisor IR\textsuperscript{*} & Actuador & Comando de \emph{setpoint} al A/C & bajo demanda \\
-ESP32 & Gateway & Agrega y transmite las lecturas & --- \\
+Arduino UNO & Nodo sensor & Agrega lecturas y las emite por Serial (JSON) & \textasciitilde 2 s \\
 \bottomrule
 \end{tabular}
 \caption{Hardware, función, datos y frecuencia de envío.}
@@ -212,13 +216,16 @@ y visualiza en la aplicación; el envío IR real al A/C es funcionalidad
 opcional (§\ref{sec:alcance}).\par}
 \end{table}
 
-\paragraph{Conexión con la aplicación.} El gateway ESP32 (con Raspberry Pi
-evaluada como alternativa) publica
-cada lectura como \texttt{POST /api/v1/sensors/} en formato JSON
-(\texttt{sensor\_id}, \texttt{temperature}, \texttt{humidity},
-\texttt{co2\_ppm}, \texttt{co\_ppm}, \texttt{timestamp}), autenticado por
-\texttt{X-API-Key}. El backend persiste la lectura y ejecuta la acción
-cognitiva; el actuador IR recibe de vuelta el \emph{setpoint} sugerido. El
+\paragraph{Conexión con la aplicación.} El Arduino UNO emite cada
+\textasciitilde 2\,s un JSON por Serial (9600 baud) con las lecturas de los
+tres sensores. Un script Python en el equipo puente
+(\texttt{hardware/sistema.py}) parsea la trama, convierte la lectura ADC del
+MQ-7 a ppm reales mediante la curva del \emph{datasheet}, fusiona el aforo
+estimado por la cámara (MediaPipe) y publica \texttt{POST /api/v1/sensors/}
+en formato JSON (\texttt{sensor\_id}, \texttt{temperature}, \texttt{humidity},
+\texttt{co2\_ppm}, \texttt{co\_ppm}) por HTTPS a la instancia desplegada,
+autenticado por \texttt{X-API-Key}. El backend persiste la lectura y responde
+la acción cognitiva; el actuador IR recibirá el \emph{setpoint} sugerido. El
 umbral de CO $>50$\,ppm dispara alertas de emergencia~\cite{epaco}.
 
 % ============================ 6. IA =======================================
@@ -238,6 +245,9 @@ CO\textsubscript{2}~\cite{co2occupancy}: \texttt{personas} $\approx$
 determinística mantiene el servicio operativo.
 \item \textbf{Detección de anomalías.} Umbrales sobre temperatura, humedad y CO
 para emergencias.
+\item \textbf{Visión por computadora (aforo).} MediaPipe Face Detection en el
+nodo cliente cuenta entradas y salidas por cruce de línea virtual; el aforo se
+registra para trazabilidad y validación de la estimación por CO\textsubscript{2}.
 \item \textbf{Asistente conversacional (NLP).} IBM Watson Assistant vía
 \emph{custom extension} sobre la API.
 \item \textbf{Reportes automáticos.} Cálculo de ROI energético (kWh y CO\textsubscript{2} evitados).
@@ -251,7 +261,7 @@ confort estable para el usuario.
 % ============================ 7. ARQUITECTURA =============================
 \section{Arquitectura inicial de la solución}
 
-\begin{figure}[h]
+\begin{figure}[H]
 \centering
 \begin{tikzpicture}[
   font=\footnotesize,
@@ -282,7 +292,7 @@ confort estable para el usuario.
 \node[ia,right=34mm of api](ml){Modelo ML\\scikit-learn};
 \node[ia,below=of ml](watson){IBM Watson\\Assistant};
 % hardware
-\node[hw,below=16mm of app](hw){Sensores + ESP32\\DHT22 · MH-Z19 · MQ-7};
+\node[hw,below=16mm of app](hw){Arduino UNO + Cámara\\DHT11 · MQ135 · MQ7};
 
 \draw[arr](user)--(app);
 \draw[arr](admin)--(app);
@@ -303,7 +313,7 @@ actúa como \emph{proxy} de IBM Watson, y recibe la telemetría del hardware IoT
 % ============================ 8. TECNOLOGÍAS ==============================
 \section{Tecnologías propuestas}
 
-\begin{table}[h]\centering\small
+\begin{table}[H]\centering\small
 \begin{tabular}{@{}L{3.2cm}L{11.6cm}@{}}
 \toprule
 \textbf{Capa} & \textbf{Tecnologías} \\
@@ -311,8 +321,8 @@ actúa como \emph{proxy} de IBM Watson, y recibe la telemetría del hardware IoT
 Frontend & React 18, Vite, TypeScript, Tailwind CSS, Recharts \\
 Backend & Python, FastAPI~\cite{fastapi}, SQLAlchemy, Uvicorn; JWT + Argon2 (\texttt{pwdlib}) \\
 Bases de datos & PostgreSQL 15 (negocio), MongoDB 6 (telemetría) \\
-IA & scikit-learn (\texttt{HistGradientBoostingRegressor}), IBM Watson Assistant \\
-Hardware & ESP32 / Raspberry Pi, DHT22, MH-Z19B, MQ-7, emisor IR \\
+IA & scikit-learn (\texttt{HistGradientBoostingRegressor}), IBM Watson Assistant, MediaPipe (visión) \\
+Hardware & Arduino UNO, DHT11, MQ-135, MQ-7, cámara + MediaPipe, emisor IR \\
 Despliegue & Docker + Docker Compose, Nginx \\
 \bottomrule
 \end{tabular}
@@ -337,7 +347,7 @@ Despliegue & Docker + Docker Compose, Nginx \\
 \begin{minipage}[t]{0.46\linewidth}
 \textbf{Funcionalidades opcionales}
 \begin{itemize}
-\item Despliegue en la nube (AWS/GCP).
+\item Migración a nube gestionada (AWS/GCP).
 \item Reentrenamiento automático del modelo.
 \item Control real del A/C por emisor IR calibrado.
 \item Notificaciones por correo.
@@ -349,7 +359,7 @@ Despliegue & Docker + Docker Compose, Nginx \\
 % ============================ 10. VIABILIDAD ==============================
 \section{Viabilidad del proyecto}\label{sec:viab}
 
-\begin{table}[h]\centering\small
+\begin{table}[H]\centering\small
 \begin{tabular}{@{}L{3.4cm}L{11.4cm}@{}}
 \toprule
 \textbf{Factor} & \textbf{Evaluación} \\
@@ -388,6 +398,8 @@ decisiones anticipatorias basadas en datos.
 \begin{itemize}
 \item \textbf{Repositorio de código (GitHub):} \\
 \href{https://github.com/Kiarosaurus/Climate-Cognitive-System}{https://github.com/Kiarosaurus/Climate-Cognitive-System}
+\item \textbf{Instancia desplegada (producción):} \\
+\href{https://kiarosaurus.me}{https://kiarosaurus.me}
 \item \textbf{Videos de demostración (Software y Hardware) --- Google Drive:} \\
 \href{https://drive.google.com/drive/folders/1n6j4DU4aDTeXRAdlSHInQun2IR3O-uuh?usp=sharing}{https://drive.google.com/drive/folders/1n6j4DU4aDTeXRAdlSHInQun2IR3O-uuh}
 \end{itemize}
