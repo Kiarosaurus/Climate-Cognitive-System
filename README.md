@@ -1,8 +1,21 @@
 # Climate Cognitive System (CCS)
 
+[![CI](https://github.com/Kiarosaurus/Climate-Cognitive-System/actions/workflows/ci.yml/badge.svg)](https://github.com/Kiarosaurus/Climate-Cognitive-System/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 > An IoT cognitive platform that turns raw climate-sensor telemetry into **predictive, occupancy-aware air-conditioning decisions** — pre-cooling rooms *before* they fill up, flagging CO emergencies in real time, and quantifying the energy it saves.
 
-> 📖 Technical deep-dive: [TECHNICAL_DOCUMENTATION.md](./TECHNICAL_DOCUMENTATION.md) · 📄 Project report (Spanish, rubric): [`informe/informe.pdf`](./informe/informe.pdf)
+> 🌐 **Live instance:** [kiarosaurus.me](https://kiarosaurus.me) · 📖 Technical deep-dive: [TECHNICAL_DOCUMENTATION.md](./TECHNICAL_DOCUMENTATION.md) · 📄 Project report (Spanish, rubric): [`informe/informe.pdf`](./informe/informe.pdf)
+
+<!-- Screenshots: drop PNGs into docs/assets/ and uncomment.
+| Global dashboard | Room detail | ROI report |
+|---|---|---|
+| ![Dashboard](docs/assets/dashboard.png) | ![Room detail](docs/assets/room-detail.png) | ![ROI](docs/assets/roi.png) |
+-->
 
 ---
 
@@ -34,6 +47,19 @@ On top of the control loop, CCS provides:
 - **🔐 RBAC + JWT Auth** — Argon2 password hashing (self-healing admin seed), short-lived JWTs, and reservation-aware authorization (collaborators can only control devices in rooms they currently hold).
 - **🛡️ Resilient Startup** — PostgreSQL connection retries, idempotent in-code schema migrations (handling cases `create_all()` can't), and an auto-seeded admin account.
 - **🐳 Fully Containerized** — One `docker compose up` brings up PostgreSQL, MongoDB, the FastAPI backend, and the React frontend on an isolated bridge network with health checks.
+- **🔌 Physical Sensor Node** — An **Arduino UNO** (DHT11, MQ-135, MQ-7) streams JSON over Serial to a Python gateway ([`hardware/sistema.py`](./hardware/sistema.py)) that also counts room occupancy with the laptop camera (**MediaPipe Face Detection**, virtual-line crossing) and POSTs the merged reading to the live backend.
+
+---
+
+## Engineering Decisions
+
+The decisions that best explain the design — each with a full writeup in the [technical documentation](./TECHNICAL_DOCUMENTATION.md):
+
+1. **The ML model must beat its own heuristic to ship** — chronological holdout plus mean and occupancy-only baselines; if `beats_baselines` is false, the API keeps running on the transparent heuristic instead (§3.9.3).
+2. **Feed-forward + feedback occupancy** — the reservation plan pre-cools ahead of arrival; CO₂ mass balance trims demand to measured reality, so a half-empty booked room stops being over-cooled (§3.7).
+3. **A deterministic exogenous climate driver instead of a weather API** — without independent signal the cooling label degenerates into `occupancy × k`, which the heuristic already reproduces, and ML can never win (§3.9.1–3.9.2).
+4. **Polyglot persistence without strict cross-store FKs** — high-volume telemetry in MongoDB, relational configuration in PostgreSQL; deletions use historical orphaning + text-confirmation instead of cascades that would destroy telemetry history (§3.4).
+5. **Graceful degradation everywhere** — a missing `model.joblib`, absent Watson credentials, or a briefly unreachable database degrade one feature each; the API never goes down whole (§3.9, startup retries).
 
 ---
 
@@ -127,14 +153,18 @@ Climate-Cognitive-System/
 │   └── train_model.py           # Train & export the model bundle
 ├── seed_data/
 │   └── generate_dataset.py      # Reproducible UTEC dataset → Mongo + PostgreSQL
+├── hardware/
+│   ├── sistema.py               # Arduino UNO Serial → camera occupancy → HTTPS gateway
+│   └── README.md                # Components, calibration and run instructions
 ├── informe/
 │   ├── informe.tex              # Spanish project report (rubric) → informe.pdf
 │   └── slides.tex               # Spanish presentation (beamer) → slides.pdf
 ├── database/
 │   ├── postgres/init.sql
 │   └── mongo/init.js
+├── .github/workflows/ci.yml     # CI: backend unit tests + frontend build
 ├── docker-compose.yml
-└── .env
+└── .env.example                 # Template — copy to .env (gitignored)
 ```
 
 ---
@@ -142,7 +172,6 @@ Climate-Cognitive-System/
 ## Prerequisites
 
 - **Docker** ≥ 24.0 & **Docker Compose** ≥ 2.0 (recommended path)
-- **Node.js** ≥ 18 (first run only, to generate `frontend/package-lock.json` for a reproducible image build)
 - **Git**
 - For manual/local runs: **Python 3.12+**, plus a running **PostgreSQL 15** and **MongoDB 6**
 - *(Optional)* IBM Watson Assistant credentials for the chat feature
@@ -158,13 +187,10 @@ Climate-Cognitive-System/
 git clone https://github.com/Kiarosaurus/Climate-Cognitive-System.git
 cd Climate-Cognitive-System
 
-# 2. Generate package-lock.json (once) — required for the reproducible frontend build
-cd frontend && npm install && cd ..
-
-# 3. Configure environment
+# 2. Configure environment
 cp .env.example .env   # or create .env manually (see Environment Variables below)
 
-# 4. Launch the full stack (fresh state)
+# 3. Launch the full stack (fresh state)
 docker compose down -v
 docker compose up --build -d
 
@@ -302,6 +328,26 @@ curl -X POST http://localhost:8000/api/v1/chat/ \
 
 ---
 
+## Physical Sensor Node
+
+The repo includes the client-side gateway for the real sensor node deployed in classroom **A403**: an **Arduino UNO** samples DHT11 (temperature/humidity), MQ-135 (CO₂ proxy) and MQ-7 (CO, raw ADC → ppm via datasheet curve) and streams JSON over USB-Serial every ~2 s; [`hardware/sistema.py`](./hardware/sistema.py) merges in a **camera-based occupancy count** (MediaPipe Face Detection, virtual-line crossing) and POSTs the reading to the backend. Wiring, calibration and run instructions: [`hardware/README.md`](./hardware/README.md).
+
+---
+
+## Running Tests
+
+Unit tests cover the pure cognitive logic — CO₂ mass-balance occupancy, the deterministic Lima climate model, the heuristic cooling engine (feed-forward/feedback blend, policies, AC decision) and per-room physical metadata:
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+pytest -v
+```
+
+The same suite plus the frontend type-check/build runs on every push via [GitHub Actions](./.github/workflows/ci.yml).
+
+---
+
 ## Training the Predictive Model
 
 The cooling engine runs on a heuristic fallback out of the box. To train and deploy the ML model:
@@ -352,3 +398,9 @@ docker compose exec mongo mongosh
 docker compose down
 docker compose down -v --remove-orphans
 ```
+
+---
+
+## License
+
+Released under the [MIT License](./LICENSE).
