@@ -1,0 +1,386 @@
+% ============================================================================
+%  Informe de Proyecto --- Climate Cognitive System (CCS)
+%  Curso: Computación Cognitiva --- UTEC
+%  Compilar:  tectonic informe.tex        (recomendado, sin dependencias)
+%         o:  latexmk -pdf informe.tex
+%  Único documento del repositorio en español (el resto está en inglés).
+% ============================================================================
+\documentclass[11pt,a4paper]{article}
+
+% Engine-agnostic font setup: works with pdflatex AND xelatex/lualatex/tectonic.
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[utf8]{inputenc}
+  \usepackage[T1]{fontenc}
+  \usepackage{lmodern}
+  \usepackage{textcomp}
+\else
+  \usepackage{fontspec}
+  \setmainfont{Latin Modern Roman}
+\fi
+\usepackage[spanish,es-tabla]{babel}
+\usepackage[a4paper,margin=2.3cm]{geometry}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows.meta,positioning,fit,backgrounds,calc}
+\usepackage[hidelinks]{hyperref}
+\usepackage{titlesec}
+
+\definecolor{ccsblue}{HTML}{1F6FEB}
+\definecolor{ccsdark}{HTML}{0B2545}
+\definecolor{ccsgray}{HTML}{5B6773}
+\definecolor{ccssoft}{HTML}{E8F0FE}
+
+\titleformat{\section}{\normalfont\Large\bfseries\color{ccsdark}}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\normalfont\large\bfseries\color{ccsblue}}{\thesubsection}{0.5em}{}
+
+\setlist{itemsep=1pt,topsep=2pt}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+% ---------------------------------------------------------------------------
+\begin{document}
+
+% ============================ PORTADA =====================================
+\begin{titlepage}
+\centering
+\vspace*{2.2cm}
+{\color{ccsblue}\rule{\linewidth}{2pt}}\\[0.6cm]
+{\Huge\bfseries\color{ccsdark} Climate Cognitive System\par}
+\vspace{0.3cm}
+{\Large Gestión climática predictiva para aulas universitarias\par}
+{\color{ccsblue}\rule{\linewidth}{2pt}}\\[1.4cm]
+
+{\large\textbf{Curso:} Computación Cognitiva\par}
+{\large\textbf{Institución:} UTEC --- Barranco, Lima\par}
+\vspace{1.2cm}
+
+{\large\textbf{Integrantes del grupo}\par}
+\vspace{0.3cm}
+\begin{tabular}{ll}
+\textcolor{ccsgray}{Balcazar Santa Cruz, Kiara Alexandra} & \textcolor{ccsgray}{[202210403]} \\
+\textcolor{ccsgray}{Gonzales Torres, Aaron Naif} & \textcolor{ccsgray}{[202XXXXXX]} \\
+\textcolor{ccsgray}{Surco Vergara, Maria Fernanda} & \textcolor{ccsgray}{[202110358]} \\
+\end{tabular}
+
+\vfill
+{\large \today\par}
+\end{titlepage}
+
+% ============================ ÍNDICE (opcional) ============================
+\tableofcontents
+\newpage
+
+% ============================ 1. PROBLEMA ==================================
+\section{Problema identificado}
+
+En los entornos universitarios, los sistemas de aire acondicionado (A/C) de las
+aulas operan tradicionalmente en modo \emph{always-on} durante todo el horario
+laboral, sin considerar la ocupación real del espacio ni las condiciones
+ambientales del momento.
+
+\paragraph{¿Qué problema existe?} El A/C enfría aulas vacías o con baja
+asistencia con la misma intensidad que aulas llenas, porque el control se basa
+en el horario y no en la ocupación efectiva. Esto genera un consumo energético
+sistemáticamente mayor al necesario.
+
+\paragraph{¿A quién afecta?} A la institución (UTEC), que asume el sobrecosto
+energético; al personal de mantenimiento, que carece de datos para optimizar; y
+al medio ambiente, por la huella de carbono asociada al consumo eléctrico.
+
+\paragraph{¿Por qué es importante resolverlo?} La climatización representa una
+fracción considerable del gasto eléctrico de un campus. Ajustar la demanda a la
+ocupación real reduce costos y emisiones sin sacrificar el confort térmico
+recomendado (\textasciitilde 20--24\,°C según ASHRAE~55~\cite{ashrae55}).
+
+\paragraph{¿Qué ocurre actualmente si no se soluciona?} Se mantiene el
+desperdicio energético, no existe trazabilidad del uso real de los espacios, y
+las decisiones de climatización siguen siendo manuales y reactivas en lugar de
+anticipatorias.
+
+% ============================ 2. SOLUCIÓN ==================================
+\section{Propuesta de solución}
+
+\textbf{Climate Cognitive System (CCS)} es una plataforma IoT de gestión
+climática \emph{predictiva} que ajusta dinámicamente el \emph{setpoint} del A/C
+combinando ocupación real, condiciones ambientales y un motor cognitivo de
+Machine Learning con \emph{fallback} heurístico.
+
+\paragraph{¿Cómo funcionará?} Sensores físicos reportan temperatura, humedad,
+CO\textsubscript{2} y CO al backend. El sistema estima la \textbf{ocupación real}
+a partir del CO\textsubscript{2} (balance de masa) y la contrasta con la
+\textbf{ocupación esperada} de la reserva. Con ambas señales, más el clima
+exterior, un modelo predictivo calcula cuántos grados pre-compensar y emite una
+acción cognitiva sobre el A/C (\texttt{ON}/\texttt{STANDBY}).
+
+\paragraph{¿Qué valor aporta?} Enfría según quién \emph{está} en el aula, no
+según quién fue reservado: un aula medio vacía produce poco
+CO\textsubscript{2}, el sistema lo detecta y reduce la demanda, ahorrando
+energía. Además calcula el \textbf{ROI energético} frente al sistema tradicional.
+
+\paragraph{¿Qué lo diferencia de una solución tradicional?} El control clásico
+es \emph{always-on} por horario. CCS es \emph{feed-forward + feedback}:
+anticipa con la reserva y corrige en tiempo real con la ocupación medida,
+integrando además un asistente conversacional (IBM Watson) y detección de
+emergencias por monóxido de carbono.
+
+% ============================ 3. PERFILES ==================================
+\section{Perfiles del sistema}
+
+El sistema implementa control de acceso por roles (RBAC) de tres niveles.
+
+\begin{table}[h]\centering\small
+\begin{tabular}{@{}L{2.6cm}L{12.2cm}@{}}
+\toprule
+\textbf{Perfil} & \textbf{Acciones principales} \\
+\midrule
+\textbf{Usuario} \newline (\texttt{guest} / \texttt{collaborator}) &
+Registrarse e iniciar sesión; consultar el estado de aulas y sensores en tiempo
+real; crear reservas; recibir alertas de emergencia (CO); consultar el
+asistente conversacional; el \texttt{collaborator} puede además controlar el
+sensor de un aula \emph{si tiene una reserva activa}. \\
+\addlinespace
+\textbf{Administrador} \newline (\texttt{admin}) &
+Gestionar usuarios (aprobar, rechazar, reactivar); aprovisionar y configurar
+aulas y sensores; supervisar la telemetría recolectada; administrar reservas;
+revisar reportes de ROI energético; recargar el modelo de IA. \\
+\bottomrule
+\end{tabular}
+\caption{Perfiles obligatorios y sus funciones.}
+\end{table}
+
+Las cuentas \texttt{guest} se auto-aprueban; \texttt{collaborator} y
+\texttt{admin} quedan en estado \texttt{pending} hasta aprobación manual del
+administrador.
+
+% ============================ 4. APLICACIÓN ================================
+\section{Aplicación web}
+
+Se desarrolla una \textbf{aplicación web responsive} (React + Vite +
+TypeScript), pensada como panel administrativo y de monitoreo. Módulos
+principales:
+
+\begin{itemize}
+\item \textbf{Inicio de sesión / Registro} --- autenticación JWT y flujo de
+aprobación por rol.
+\item \textbf{Dashboard global} --- monitor de telemetría en vivo.
+\item \textbf{Aulas y detalle de aula} --- estado del A/C en tiempo real,
+historial de lecturas, control físico del sensor.
+\item \textbf{Reservas} --- CRUD con validación de horario.
+\item \textbf{Infraestructura} --- panel dual Aulas $\leftrightarrow$ Sensores
+para aprovisionamiento.
+\item \textbf{Reporte de ROI} --- KPIs energéticos y comparación
+Tradicional vs.\ Cognitivo.
+\item \textbf{Gestión de usuarios} --- aprobación de cuentas (solo admin).
+\item \textbf{Chat flotante} --- asistente IBM Watson embebido.
+\end{itemize}
+
+Cada módulo respeta el RBAC: el menú se filtra según el rol autenticado, en
+espejo con la autorización del backend.
+
+% ============================ 5. HARDWARE ==================================
+\section{Hardware a utilizar}
+
+La telemetría se captura con sensores de bajo costo sobre un microcontrolador
+que la envía al backend por HTTP. En la versión actual se cuenta con un nodo
+sensor funcional; el resto del despliegue se modela mediante un simulador y un
+dataset sembrado reproducible (ver §\ref{sec:viab}).
+
+\begin{table}[h]\centering\small
+\begin{tabular}{@{}L{2.6cm}L{3.4cm}L{4.2cm}L{3.4cm}@{}}
+\toprule
+\textbf{Dispositivo} & \textbf{Función} & \textbf{Datos que captura} & \textbf{Frecuencia} \\
+\midrule
+DHT22 & Ambiente térmico & Temperatura (°C), humedad (\%) & \textasciitilde 30 s \\
+MH-Z19B & Calidad de aire & CO\textsubscript{2} (ppm) $\rightarrow$ ocupación real & \textasciitilde 30 s \\
+MQ-7 & Seguridad & Monóxido de carbono CO (ppm) & \textasciitilde 30 s \\
+Emisor IR & Actuador & Comando de \emph{setpoint} al A/C & bajo demanda \\
+ESP32 / Raspberry Pi & Gateway & Agrega y transmite las lecturas & --- \\
+\bottomrule
+\end{tabular}
+\caption{Hardware, función, datos y frecuencia de envío.}
+\end{table}
+
+\paragraph{Conexión con la aplicación.} El gateway (ESP32/Raspberry Pi) publica
+cada lectura como \texttt{POST /api/v1/sensors/} en formato JSON
+(\texttt{sensor\_id}, \texttt{temperature}, \texttt{humidity},
+\texttt{co2\_ppm}, \texttt{co\_ppm}, \texttt{timestamp}), autenticado por
+\texttt{X-API-Key}. El backend persiste la lectura y ejecuta la acción
+cognitiva; el actuador IR recibe de vuelta el \emph{setpoint} sugerido. El
+umbral de CO $>50$\,ppm dispara alertas de emergencia~\cite{epaco}.
+
+% ============================ 6. IA =======================================
+\section{Uso de Inteligencia Artificial}
+
+La IA es el núcleo funcional, no un adorno. Opera en varias capas:
+
+\begin{itemize}
+\item \textbf{Predicción de carga térmica (ML).} Un
+\texttt{HistGradientBoostingRegressor}~\cite{sklearn} predice cuántos grados
+pre-compensar, a partir de temperatura, hora, ocupación esperada, ocupación
+real, temperatura exterior y metadata física del aula.
+\item \textbf{Estimación de ocupación real.} Balance de masa sobre el
+CO\textsubscript{2}~\cite{co2occupancy}: \texttt{personas} $\approx$
+(CO\textsubscript{2} $-$ base) / ppm-por-persona.
+\item \textbf{Fallback heurístico.} Si no hay modelo entrenado, una regla
+determinística mantiene el servicio operativo.
+\item \textbf{Detección de anomalías.} Umbrales sobre temperatura, humedad y CO
+para emergencias.
+\item \textbf{Asistente conversacional (NLP).} IBM Watson Assistant vía
+\emph{custom extension} sobre la API.
+\item \textbf{Reportes automáticos.} Cálculo de ROI energético (kWh y CO\textsubscript{2} evitados).
+\end{itemize}
+
+\paragraph{Datos, resultado y beneficio.} Procesa la telemetría histórica de los
+sensores más el contexto de reservas; produce una decisión de setpoint y un
+reporte de ahorro; el beneficio es doble: energía/costo para el administrador y
+confort estable para el usuario.
+
+% ============================ 7. ARQUITECTURA =============================
+\section{Arquitectura inicial de la solución}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  node distance=8mm and 12mm,
+  box/.style={draw=ccsdark,fill=ccssoft,rounded corners,minimum height=8mm,
+              minimum width=22mm,align=center,thick},
+  actor/.style={draw=ccsblue,fill=white,rounded corners,minimum height=8mm,
+                minimum width=20mm,align=center,thick},
+  ia/.style={draw=ccsblue,fill=ccsblue!12,rounded corners,minimum height=8mm,
+             minimum width=22mm,align=center,thick},
+  db/.style={draw=ccsdark,fill=white,cylinder,shape border rotate=90,
+             aspect=0.25,minimum height=11mm,minimum width=20mm,align=center,thick},
+  hw/.style={draw=ccsgray,fill=white,rounded corners,minimum height=8mm,
+             minimum width=22mm,align=center,thick},
+  arr/.style={-{Stealth[length=2mm]},thick,ccsgray}
+]
+% actors
+\node[actor](user){Usuario};
+\node[actor,below=of user](admin){Administrador};
+% app
+\node[box,right=of $(user)!0.5!(admin)$](app){App Web\\React + Vite};
+% backend
+\node[box,right=of app](api){Backend / API\\FastAPI};
+% databases
+\node[db,above right=6mm and 12mm of api](mongo){MongoDB\\(lecturas)};
+\node[db,below right=6mm and 12mm of api](pg){PostgreSQL\\(negocio)};
+% IA
+\node[ia,right=34mm of api](ml){Modelo ML\\scikit-learn};
+\node[ia,below=of ml](watson){IBM Watson\\Assistant};
+% hardware
+\node[hw,below=16mm of app](hw){Sensores + ESP32\\DHT22 · MH-Z19 · MQ-7};
+
+\draw[arr](user)--(app);
+\draw[arr](admin)--(app);
+\draw[arr]([yshift=1mm]app.east)--([yshift=1mm]api.west);
+\draw[arr]([yshift=-1mm]api.west)--([yshift=-1mm]app.east);
+\draw[arr](api)--(mongo);
+\draw[arr](api)--(pg);
+\draw[arr](api)--(ml);
+\draw[arr](app.south)|-(watson.west);
+\draw[arr](hw.east)-|(api.south) node[midway,below,black]{\scriptsize POST /sensors/};
+\draw[arr](api.south east)-- ++(0,-6mm) -| (hw.east);
+\end{tikzpicture}
+\caption{Arquitectura: usuarios y administrador operan la app web, que consume
+el backend FastAPI; éste persiste en MongoDB/PostgreSQL, invoca el modelo ML e
+IBM Watson, y recibe la telemetría del hardware IoT.}
+\end{figure}
+
+% ============================ 8. TECNOLOGÍAS ==============================
+\section{Tecnologías propuestas}
+
+\begin{table}[h]\centering\small
+\begin{tabular}{@{}L{3.2cm}L{11.6cm}@{}}
+\toprule
+\textbf{Capa} & \textbf{Tecnologías} \\
+\midrule
+Frontend & React 18, Vite, TypeScript, Tailwind CSS, Recharts \\
+Backend & Python, FastAPI~\cite{fastapi}, SQLAlchemy, Uvicorn; JWT + Argon2 (\texttt{pwdlib}) \\
+Bases de datos & PostgreSQL 15 (negocio), MongoDB 6 (telemetría) \\
+IA & scikit-learn (\texttt{HistGradientBoostingRegressor}), IBM Watson Assistant \\
+Hardware & ESP32 / Raspberry Pi, DHT22, MH-Z19B, MQ-7, emisor IR \\
+Despliegue & Docker + Docker Compose, Nginx \\
+\bottomrule
+\end{tabular}
+\caption{Stack tecnológico por capa.}
+\end{table}
+
+% ============================ 9. ALCANCE ==================================
+\section{Alcance inicial del proyecto}
+
+\begin{minipage}[t]{0.5\linewidth}
+\textbf{Funcionalidades obligatorias}
+\begin{itemize}
+\item Ingesta de telemetría y persistencia.
+\item Motor cognitivo (ML + heurístico) con acción sobre el A/C.
+\item Estimación de ocupación real vía CO\textsubscript{2}.
+\item RBAC de 3 roles + autenticación JWT.
+\item App web con dashboards, reservas e infraestructura.
+\item Detección y alerta de emergencias por CO.
+\item Reporte de ROI energético.
+\end{itemize}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.46\linewidth}
+\textbf{Funcionalidades opcionales}
+\begin{itemize}
+\item Despliegue en la nube (AWS/GCP).
+\item Reentrenamiento automático del modelo.
+\item Control real del A/C por emisor IR calibrado.
+\item Notificaciones por correo.
+\item Exportación de reportes a PDF.
+\item Integración de API meteorológica real.
+\end{itemize}
+\end{minipage}
+
+% ============================ 10. VIABILIDAD ==============================
+\section{Viabilidad del proyecto}\label{sec:viab}
+
+\begin{table}[h]\centering\small
+\begin{tabular}{@{}L{3.4cm}L{11.4cm}@{}}
+\toprule
+\textbf{Factor} & \textbf{Evaluación} \\
+\midrule
+Hardware & Sensores de bajo costo y ampliamente disponibles; un nodo funcional ya operativo. \\
+Herramientas de IA & scikit-learn e IBM Watson accesibles sin costo relevante. \\
+Conocimientos & Equipo con dominio de Python, React y bases de datos. \\
+Tiempo & Backend, frontend y motor cognitivo ya implementados en su primera versión. \\
+Riesgo principal & \textbf{Disponibilidad limitada de hardware} (un solo sensor). \\
+Mitigación & Simulador de telemetría + \textbf{dataset sembrado reproducible} (\texttt{seed\_data/}), que permite validar todo el pipeline sin múltiples sensores. \\
+\bottomrule
+\end{tabular}
+\caption{Análisis de viabilidad y gestión de riesgos.}
+\end{table}
+
+% ============================ 11. IMPACTO =================================
+\section{Impacto esperado}
+
+\begin{itemize}
+\item \textbf{Ambiental.} Reducción del consumo eléctrico del A/C y, por tanto,
+de las emisiones de CO\textsubscript{2} asociadas, al climatizar según ocupación
+real en lugar de un horario fijo.
+\item \textbf{Económico.} Ahorro directo en la factura energética del campus,
+cuantificado por el módulo de ROI.
+\item \textbf{Educativo / Institucional.} Trazabilidad del uso real de las aulas,
+útil para la planificación de espacios de UTEC.
+\item \textbf{Seguridad.} Detección temprana de niveles peligrosos de monóxido
+de carbono con alertas en tiempo real.
+\item \textbf{Automatización.} Sustituye el control manual y reactivo por
+decisiones anticipatorias basadas en datos.
+\end{itemize}
+
+% ============================ REFERENCIAS =================================
+\bibliographystyle{plain}
+\bibliography{refs}
+
+\vspace{0.6cm}
+\noindent\rule{\linewidth}{0.4pt}\\
+{\footnotesize La documentación técnica extensa (arquitectura interna, decisiones
+de diseño y detalle del pipeline de ML) se encuentra en el anexo
+\texttt{TECHNICAL\_DOCUMENTATION.md} del repositorio.}
+
+\end{document}
