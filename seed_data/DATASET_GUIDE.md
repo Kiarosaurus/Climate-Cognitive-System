@@ -22,9 +22,18 @@ motor cognitivo.
   con un **bump reproducible de hasta +2** (0, +1 o +2; `random.Random` keyed por room+fecha+`ATTENDANCE_SEED`)
   que hace la curva **no monótona**. Fechas especiales lo sobreescriben. El `co2_ppm` se
   **deriva** del actual (mass-balance), así el gap plan-vs-realidad queda físicamente coherente.
+- **Idle ticks:** 3 lecturas/día/room en horas sin clase (`people=0`, `expected=0`) —
+  cobertura real de noches, fines de semana y aulas vacías para el ML, seeded por
+  (room, fecha).
 - **Clima Lima invierno:** frío, húmedo (garúa); indoor cerca de 20 °C. Cada lectura
   guarda `outdoor_temp` (de `climate_service.py`), driver exógeno del target ML (ver
   TECHNICAL_DOCUMENTATION.md §3.9); el indoor se acopla parcialmente al exterior por la envolvente.
+- **Timestamps:** naive en hora local de Lima; el backend compensa el desfase de las
+  lecturas live (UTC) vía `LOCAL_UTC_OFFSET_HOURS`, tanto en los features del modelo
+  como en el matching de `Schedule`.
+- **Determinismo:** el bump de asistencia y los idle ticks usan RNG keyed por
+  room+fecha (order-independent); el jitter de sensores usa el RNG global con
+  `seed(2026)` — determinístico run-a-run, pero sensible al orden de generación.
 - **Reservas futuras** (post 5-jul) en la tabla `Reservation`.
 
 ## Uso

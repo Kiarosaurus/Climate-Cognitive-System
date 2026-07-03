@@ -7,8 +7,9 @@ Barranco campus and loads it into the databases:
   PostgreSQL : rooms, weekly schedules, sensor_devices, a seed professor user,
                and the FUTURE reservations (after the last sample date).
   MongoDB    : sensor_readings (one document per 10-min tick during each class
-               session, plus a 30-min pre-class warm-up), each carrying the same
-               cognitive_action shape the live ingest pipeline produces.
+               session, plus a 30-min pre-class warm-up, plus 3 idle off-hours
+               ticks per room per day for empty-room coverage), each carrying
+               the same cognitive_action shape the live ingest pipeline produces.
 
 Occupancy model (mirrors backend/app/services):
   - expected_occupancy → the reservation plan (Schedule.expected_people).
@@ -148,8 +149,12 @@ def realized_people(sch, d: date) -> int:
     return max(floor, min(people, reservation, ROOM_CAP[room_id]))
 
 
-def synth_reading(room_id: str, people: int, ts: datetime) -> dict:
-    """Build one Mongo sensor_readings document + its cognitive_action."""
+def synth_reading(room_id: str, people: int, ts: datetime, expected: int) -> dict:
+    """Build one Mongo sensor_readings document + its cognitive_action.
+
+    `expected` is the session's own reservation (0 for idle off-hours ticks,
+    mirroring what the live pipeline yields when no schedule matches).
+    """
     # CO2 derived from realized occupancy (forward mass balance) + sensor jitter.
     co2 = round(max(400.0, CO2_BASELINE_PPM + people * CO2_PPM_PER_PERSON + random.gauss(0, 15)), 2)
     # Exogenous outdoor temp (Lima seasonal/diurnal model) — stored so extract_data
@@ -159,10 +164,12 @@ def synth_reading(room_id: str, people: int, ts: datetime) -> dict:
     # through the envelope. Couples indoor to the exogenous driver realistically.
     temp = round(20.0 + people * 0.04 + max(0.0, outdoor - 20.0) * 0.12 + random.gauss(0, 0.3), 2)
     humidity = round(min(85.0, max(55.0, 68.0 + people * 0.1 + random.gauss(0, 3))), 1)
-    co_ppm = round(max(0.0, random.gauss(0, 0.4)), 2)
+    # Ambient MQ-7 baseline ~1.5 ppm (a real sensor never reads a hard 0 in air).
+    # Deliberately NO CO emergencies in the seed: these docs carry
+    # is_simulated=False, so a seeded spike would surface as a REAL alert.
+    co_ppm = round(max(0.0, random.gauss(1.5, 0.6)), 2)
 
     # cognitive_action — mirror predictive_service (heuristic path).
-    expected = SCHEDULE_RESV[room_id]
     actual = estimate_actual_occupancy(co2, ROOM_CAP[room_id])
     effective = expected if actual is None else (1 - FEEDBACK_WEIGHT) * expected + FEEDBACK_WEIGHT * actual
     thermal = round(effective * THERMAL_LOAD_PER_PERSON, 3)
@@ -192,8 +199,30 @@ def synth_reading(room_id: str, people: int, ts: datetime) -> dict:
     }
 
 
-# reservation per room (each room has a single weekly reservation size)
-SCHEDULE_RESV = {sch[0]: sch[4] for sch in SCHEDULES}
+# Hours a room is busy per weekday (session span + warm-up hour) — used to keep
+# idle ticks from colliding with class time.
+_BUSY: dict[tuple[str, int], set[int]] = {}
+for _sch in SCHEDULES:
+    _BUSY.setdefault((_sch[0], _sch[1]), set()).update(range(_sch[2] - 1, _sch[3] + 1))
+
+
+def idle_readings(d: date) -> list[dict]:
+    """Sparse empty-room ticks outside class hours (3 per room per day).
+
+    Gives the model real off-hours / weekend coverage — nights, weekends and
+    idle rooms in STANDBY with people=0 — instead of relying solely on the
+    synthetic bootstrap for that region. Seeded per (room, date): reproducible
+    and order-independent.
+    """
+    docs: list[dict] = []
+    for rid, *_ in ROOMS:
+        busy = _BUSY.get((rid, d.weekday()), set())
+        free = [h for h in range(24) if h not in busy]
+        r = random.Random(f"idle:{rid}:{d.isoformat()}:{ATTENDANCE_SEED}")
+        for hh in sorted(r.sample(free, 3)):
+            ts = datetime.combine(d, time(hh, r.choice([0, 10, 20, 30, 40, 50])))
+            docs.append(synth_reading(rid, 0, ts, expected=0))
+    return docs
 
 
 def generate_readings() -> list[dict]:
@@ -209,8 +238,9 @@ def generate_readings() -> list[dict]:
             t = class_start - timedelta(minutes=WARMUP_MIN)
             while t <= class_end:
                 present = 0 if t < class_start else people
-                docs.append(synth_reading(sch[0], present, t))
+                docs.append(synth_reading(sch[0], present, t, expected=sch[4]))
                 t += timedelta(minutes=STEP_MIN)
+        docs.extend(idle_readings(d))
         d += timedelta(days=1)
     return docs
 
@@ -227,6 +257,17 @@ def insert_mongo(docs: list[dict], wipe: bool) -> None:
     if wipe:
         deleted = col.delete_many({}).deleted_count
         print(f"  Mongo: wiped {deleted} existing readings.")
+    else:
+        # Idempotency guard: a second run without --wipe would silently duplicate
+        # every reading, corrupting telemetry and the ROI report.
+        seed_ids = [sensor_id(r[0]) for r in ROOMS]
+        existing = col.count_documents({"sensor_id": {"$in": seed_ids}})
+        if existing:
+            print(
+                f"  Mongo: {existing} seed readings already present — "
+                "re-run with --wipe to regenerate. Skipping insert."
+            )
+            return
     col.insert_many(docs)
     print(f"  Mongo: inserted {len(docs)} sensor_readings.")
 
@@ -250,12 +291,11 @@ def insert_postgres() -> None:
         # Seed professor user for reservations (idempotent by username)
         prof = s.query(User).filter(User.username == "profesor_utec").first()
         if not prof:
-            try:
-                from app.core.security import hash_password
-                pw = hash_password("changeme123")
-            except Exception:
-                pw = "seed"
-            prof = User(username="profesor_utec", hashed_password=pw,
+            # Fail loud if the hasher is unavailable — a silent fallback would
+            # store an unusable sentinel and break the seed user's login.
+            from app.core.security import hash_password
+            prof = User(username="profesor_utec",
+                        hashed_password=hash_password("changeme123"),
                         role="collaborator", status="active")
             s.add(prof)
             s.flush()

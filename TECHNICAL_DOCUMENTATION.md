@@ -610,6 +610,7 @@ people = floor + r.choice([0, 1, 2])
 - The `random.Random` **keyed by (room, date, seed)** guarantees reproducibility **independent of iteration order**.
 - Special dates (`SPECIAL`) override with the exact count (e.g., M1001 33 people).
 - `co2_ppm` is **derived** from the actual attendance (mass balance) → the `occupancy_gap` stays physically coherent (see section 3.7).
+- **Idle ticks:** 3 empty-room readings per room per day at off-class hours (`people=0`, `expected=0`) — real night/weekend/vacant coverage for the model, keyed per (room, date).
 - **Lima winter climate:** cool, humid (garúa); indoor near 20 °C.
 
 **How to populate** (with the DBs up, ports on `localhost`):

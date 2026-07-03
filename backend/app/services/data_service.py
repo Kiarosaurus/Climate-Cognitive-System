@@ -1,10 +1,16 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from starlette.concurrency import run_in_threadpool
+from app.config import LOCAL_UTC_OFFSET_HOURS
 from app.models.sensor import SensorReading
 from app.services.predictive_service import calculate_cooling_demand
 
 logger = logging.getLogger(__name__)
+
+# Feed-forward window: a schedule is considered active this many minutes BEFORE
+# its start_time, so the cognitive engine can pre-cool ahead of arrival (the
+# seed's warm-up rows carry the plan for the same window).
+PRECOOL_LOOKAHEAD_MIN = 30
 
 
 def detect_anomaly(reading: SensorReading) -> bool:
@@ -39,14 +45,22 @@ def get_room_context(db_sql, sensor_id: str, reading_timestamp: datetime) -> dic
 
     room = device.room
 
-    # Strip tzinfo so .time()/.weekday() are naive — matches PG Time column
+    # Strip tzinfo so .time()/.weekday() are naive — matches PG Time column.
+    # Schedules are stored in LOCAL wall-clock time while the API stamps readings
+    # with naive UTC, so shift into local time first (LOCAL_UTC_OFFSET_HOURS) —
+    # otherwise a 17-18h Lima class (22-23h UTC) never matches its schedule.
     now = reading_timestamp.replace(tzinfo=None) if reading_timestamp.tzinfo else reading_timestamp
+    now = now + timedelta(hours=LOCAL_UTC_OFFSET_HOURS)
+    # Feed-forward: match a schedule that starts within the next PRECOOL window,
+    # so pre-cooling can begin before the class does. (A lookahead that crosses
+    # midnight misses — acceptable, no classes straddle midnight.)
+    lookahead = now + timedelta(minutes=PRECOOL_LOOKAHEAD_MIN)
     schedule = (
         db_sql.query(Schedule)
         .filter(
-            Schedule.room_id == room.id,
             Schedule.day_of_week == now.weekday(),
-            Schedule.start_time <= now.time(),
+            Schedule.room_id == room.id,
+            Schedule.start_time <= lookahead.time(),
             Schedule.end_time >= now.time(),
         )
         .first()
