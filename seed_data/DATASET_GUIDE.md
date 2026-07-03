@@ -24,7 +24,7 @@ motor cognitivo.
   **deriva** del actual (mass-balance), así el gap plan-vs-realidad queda físicamente coherente.
 - **Clima Lima invierno:** frío, húmedo (garúa); indoor cerca de 20 °C. Cada lectura
   guarda `outdoor_temp` (de `climate_service.py`), driver exógeno del target ML (ver
-  DOCUMENTACION.md §3.9); el indoor se acopla parcialmente al exterior por la envolvente.
+  TECHNICAL_DOCUMENTATION.md §3.9); el indoor se acopla parcialmente al exterior por la envolvente.
 - **Reservas futuras** (post 5-jul) en la tabla `Reservation`.
 
 ## Uso

@@ -1,62 +1,62 @@
-# Documentación Extensa — Climate Cognitive System
+# Extended Documentation — Climate Cognitive System
 
-> Documento técnico de arquitectura, decisiones de diseño y mecánicas avanzadas implementadas en el sistema. Para la guía de instalación y despliegue, ver [README.md](./README.md).
-
----
-
-## Tabla de Contenidos
-
-1. [Propósito del Proyecto](#1-propósito-del-proyecto)
-2. [Estructura del Repositorio](#2-estructura-del-repositorio-mapeo-de-carpetas)
-3. [Funcionalidades Críticas de Negocio](#3-funcionalidades-críticas-de-negocio)
-   - 3.1 [Control de Intervalos Fantasma (Ghost Intervals)](#31-control-de-intervalos-fantasma-ghost-intervals)
-   - 3.2 [Persistencia de Emergencias con Ventana TTL Estricta](#32-persistencia-de-emergencias-con-ventana-ttl-estricta)
-   - 3.3 [Gestión de Infraestructura de Doble Panel](#33-gestión-de-infraestructura-de-doble-panel-dual-panel-layout)
-   - 3.4 [Lógica de Orfandad Histórica y Herencia Segura](#34-lógica-de-orfandad-histórica-y-herencia-segura)
-   - 3.5 [Inputs Numéricos Fluidos y UI Minimalista](#35-inputs-numéricos-fluidos-y-ui-minimalista)
-   - 3.6 [Fijación de Destellos en Gráficos de Rentabilidad](#36-fijación-de-destellos-en-gráficos-de-rentabilidad)
-   - 3.7 [Ocupación Esperada vs. Real (Feed-Forward + Feedback)](#37-ocupación-esperada-vs-real-feed-forward--feedback)
-   - 3.8 [Dataset Sembrado UTEC (seed_data)](#38-dataset-sembrado-utec-seed_data)
-   - 3.9 [Driver Climático Exógeno y Modelo ML que Supera al Baseline (Tier 2)](#39-driver-climático-exógeno-y-modelo-ml-que-supera-al-baseline-tier-2)
-   - 3.10 [Metadata Física por Aula (Tier 3)](#310-metadata-física-por-aula-tier-3)
-4. [Hitos del Proyecto y Hoja de Ruta](#4-hitos-del-proyecto-y-hoja-de-ruta)
-5. [Arquitectura Tecnológica](#5-arquitectura-tecnológica)
-6. [Endpoints API](#6-endpoints-api)
-7. [Roles y Permisos (RBAC)](#7-roles-y-permisos-rbac)
-8. [Motor Cognitivo — Flujo de Ingesta](#8-motor-cognitivo--flujo-de-ingesta)
-9. [Variables de Entorno](#9-variables-de-entorno)
+> Technical document covering architecture, design decisions and advanced mechanics implemented in the system. For the installation and deployment guide, see [README.md](./README.md). For the Spanish project report (course rubric), see [`informe/informe.pdf`](./informe/informe.pdf).
 
 ---
 
-## 1. Propósito del Proyecto
+## Table of Contents
 
-**Climate Cognitive System (CCS)** es una plataforma IoT de **gestión climática predictiva** diseñada para entornos universitarios. Su objetivo es **optimizar el confort térmico de aulas y espacios físicos** mientras **minimiza el consumo energético** del aire acondicionado mediante un motor cognitivo que combina **Machine Learning supervisado** y **reglas heurísticas de fallback**.
+1. [Project Purpose](#1-project-purpose)
+2. [Repository Structure](#2-repository-structure-folder-map)
+3. [Critical Business Features](#3-critical-business-features)
+   - 3.1 [Ghost Interval Control](#31-ghost-interval-control)
+   - 3.2 [Emergency Persistence with a Strict TTL Window](#32-emergency-persistence-with-a-strict-ttl-window)
+   - 3.3 [Dual-Panel Infrastructure Management](#33-dual-panel-infrastructure-management)
+   - 3.4 [Historical Orphan Logic and Safe Inheritance](#34-historical-orphan-logic-and-safe-inheritance)
+   - 3.5 [Fluid Numeric Inputs and Minimalist UI](#35-fluid-numeric-inputs-and-minimalist-ui)
+   - 3.6 [Fixing Flashes in the ROI Charts](#36-fixing-flashes-in-the-roi-charts)
+   - 3.7 [Expected vs. Actual Occupancy (Feed-Forward + Feedback)](#37-expected-vs-actual-occupancy-feed-forward--feedback)
+   - 3.8 [UTEC Seed Dataset (seed_data)](#38-utec-seed-dataset-seed_data)
+   - 3.9 [Exogenous Climate Driver and an ML Model That Beats the Baseline (Tier 2)](#39-exogenous-climate-driver-and-an-ml-model-that-beats-the-baseline-tier-2)
+   - 3.10 [Per-Room Physical Metadata (Tier 3)](#310-per-room-physical-metadata-tier-3)
+4. [Project Milestones and Roadmap](#4-project-milestones-and-roadmap)
+5. [Technology Architecture](#5-technology-architecture)
+6. [API Endpoints](#6-api-endpoints)
+7. [Roles and Permissions (RBAC)](#7-roles-and-permissions-rbac)
+8. [Cognitive Engine — Ingest Flow](#8-cognitive-engine--ingest-flow)
+9. [Environment Variables](#9-environment-variables)
 
-### Problema que resuelve
+---
 
-En entornos educativos, los aires acondicionados (AC) operan tradicionalmente en modo **always-on** durante el horario laboral, sin considerar:
+## 1. Project Purpose
 
-- **Ocupación real** del aula (vs. ocupación esperada según reserva).
-- **Carga térmica** generada por los ocupantes (≈ 80–120 W de calor metabólico por persona).
-- **Variaciones ambientales** medidas por sensores físicos (temperatura, humedad, CO₂, CO).
-- **Horarios programados** y reservas activas.
+**Climate Cognitive System (CCS)** is an IoT platform for **predictive climate management** aimed at university environments. Its goal is to **optimize the thermal comfort of classrooms and physical spaces** while **minimizing the energy consumption** of the air conditioning (AC), through a cognitive engine that combines **supervised Machine Learning** and **heuristic fallback rules**.
 
-CCS introduce una capa de inferencia que **ajusta dinámicamente el setpoint del AC** mediante un modelo predictivo, calcula el **ROI energético** comparándose contra el sistema tradicional, y expone una **interfaz multi-rol RBAC** para administración, monitoreo y consultas conversacionales vía **IBM Watson Assistant**.
+### Problem it solves
 
-### Componentes clave
+In educational settings, AC units traditionally operate in **always-on** mode during working hours, without considering:
 
-| Componente | Responsabilidad |
+- **Actual occupancy** of the room (vs. the occupancy expected from the reservation).
+- **Thermal load** generated by the occupants (≈ 80–120 W of metabolic heat per person).
+- **Environmental variations** measured by physical sensors (temperature, humidity, CO₂, CO).
+- **Scheduled hours** and active reservations.
+
+CCS introduces an inference layer that **dynamically adjusts the AC setpoint** via a predictive model, computes the **energy ROI** against the traditional system, and exposes a **multi-role RBAC interface** for administration, monitoring and conversational queries through **IBM Watson Assistant**.
+
+### Key components
+
+| Component | Responsibility |
 |---|---|
-| **Backend FastAPI** | Ingesta de telemetría IoT, RBAC, autenticación JWT, exposición REST |
-| **Motor cognitivo** | Predicción de carga térmica vía `scikit-learn` (modelo `.joblib`) o heurístico |
-| **MongoDB (Motor)** | Persistencia de lecturas de sensores + `cognitive_action` (decisión del AC) |
-| **PostgreSQL (SQLAlchemy)** | Entidades de negocio: `User`, `Room`, `SensorDevice`, `Reservation`, `Schedule` |
-| **Frontend React + Vite** | Dashboard multi-rol, control físico de sensores, reservas, ROI |
-| **IBM Watson Assistant** | Chatbot integrado vía custom extension (proxy `/api/v1/chat/`) |
+| **FastAPI backend** | IoT telemetry ingest, RBAC, JWT authentication, REST exposure |
+| **Cognitive engine** | Thermal-load prediction via `scikit-learn` (`.joblib` model) or heuristic |
+| **MongoDB (Motor)** | Persistence of sensor readings + `cognitive_action` (the AC decision) |
+| **PostgreSQL (SQLAlchemy)** | Business entities: `User`, `Room`, `SensorDevice`, `Reservation`, `Schedule` |
+| **React + Vite frontend** | Multi-role dashboard, physical sensor control, reservations, ROI |
+| **IBM Watson Assistant** | Chatbot integrated via a custom extension (proxy `/api/v1/chat/`) |
 
 ---
 
-## 2. Estructura del Repositorio (Mapeo de Carpetas)
+## 2. Repository Structure (Folder Map)
 
 ```
 Climate-Cognitive-System/
@@ -96,98 +96,102 @@ Climate-Cognitive-System/
 │   └── data/
 ├── seed_data/
 │   ├── generate_dataset.py
-│   ├── README.md
-│   └── output/            # (generado, no versionado)
+│   ├── DATASET_GUIDE.md
+│   └── output/            # (generated, not versioned)
+├── informe/
+│   ├── informe.tex        # Spanish project report (rubric)
+│   ├── slides.tex         # Spanish presentation (beamer)
+│   └── refs.bib
 ├── docker-compose.yml
 ├── generate_openapi.py
 ├── openapi_watson.json
 ├── .env
 ├── README.md
-└── DOCUMENTACION.md
+└── TECHNICAL_DOCUMENTATION.md
 ```
 
-### 2.1 `backend/` — Capa de aplicación Python
+### 2.1 `backend/` — Python application layer
 
-| Subcarpeta / archivo | Capa del sistema | Propósito |
+| Subfolder / file | System layer | Purpose |
 |---|---|---|
-| `app/main.py` | **Bootstrap** | Crea la instancia `FastAPI`, registra routers, ejecuta los hooks de startup (`load_model`, migraciones idempotentes, seed de admin, init Watson) |
-| `app/config.py` | **Configuración** | Carga variables de entorno (`MONGO_URI`, `POSTGRES_URI`, `SECRET_KEY`, credenciales Watson). Genera `SECRET_KEY` aleatorio si no existe |
-| `app/dependencies.py` | **Inyección DI** | Provee `get_current_user` (JWT decode + RBAC) y `require_api_key` (validación de Watson Extension Key) |
-| `app/database.py` | **DB NoSQL** | Cliente `motor.motor_asyncio.AsyncIOMotorClient` para MongoDB (async I/O) |
-| `app/database_sql.py` | **DB Relacional** | `engine` SQLAlchemy + `SessionLocal` + `Base` declarativa para PostgreSQL |
-| `app/core/security.py` | **Seguridad** | `hash_password` / `verify_password` con **Argon2** vía `pwdlib`, `create_access_token` / `decode_token` JWT (`python-jose`) |
-| `app/models/` | **Modelos** | `admin.py` (ORM SQLAlchemy: `User`, `Room`, `SensorDevice`, `Reservation`, `Schedule`); `sensor.py` (esquema Pydantic `SensorReading`) |
-| `app/routes/` | **Endpoints REST** | `auth.py` (login/register), `admin.py` (CRUD de aulas/sensores/usuarios/reservas), `sensors.py` (ingesta + control físico + emergencias), `reports.py` (ROI), `chat.py` (proxy Watson) |
-| `app/services/` | **Lógica de dominio** | `data_service.py` (pipeline de ingesta), `predictive_service.py` (ML + heurístico + blend feed-forward/feedback), `occupancy_service.py` (estimación de ocupación real vía CO₂ + gap plan-vs-real), `climate_service.py` (temperatura exterior de Lima por mes/hora — driver exógeno, sin HW), `room_profile.py` (metadata física por aula: piso, volumen, BTU — features del modelo, sin HW), `watson_service.py` (cliente Watson) |
-| `app/ml/` | **Artefactos ML** | `model.joblib` (modelo serializado, generado por `ml_pipeline/`) |
+| `app/main.py` | **Bootstrap** | Creates the `FastAPI` instance, registers routers, runs the startup hooks (`load_model`, idempotent migrations, admin seed, Watson init) |
+| `app/config.py` | **Configuration** | Loads environment variables (`MONGO_URI`, `POSTGRES_URI`, `SECRET_KEY`, Watson credentials). Generates a random `SECRET_KEY` if none exists |
+| `app/dependencies.py` | **DI injection** | Provides `get_current_user` (JWT decode + RBAC) and `require_api_key` (Watson Extension Key validation) |
+| `app/database.py` | **NoSQL DB** | `motor.motor_asyncio.AsyncIOMotorClient` client for MongoDB (async I/O) |
+| `app/database_sql.py` | **Relational DB** | SQLAlchemy `engine` + `SessionLocal` + declarative `Base` for PostgreSQL |
+| `app/core/security.py` | **Security** | `hash_password` / `verify_password` with **Argon2** via `pwdlib`, `create_access_token` / `decode_token` JWT (`python-jose`) |
+| `app/models/` | **Models** | `admin.py` (SQLAlchemy ORM: `User`, `Room`, `SensorDevice`, `Reservation`, `Schedule`); `sensor.py` (Pydantic `SensorReading` schema) |
+| `app/routes/` | **REST endpoints** | `auth.py` (login/register), `admin.py` (CRUD for rooms/sensors/users/reservations), `sensors.py` (ingest + physical control + emergencies), `reports.py` (ROI), `chat.py` (Watson proxy) |
+| `app/services/` | **Domain logic** | `data_service.py` (ingest pipeline), `predictive_service.py` (ML + heuristic + feed-forward/feedback blend), `occupancy_service.py` (actual-occupancy estimation via CO₂ + plan-vs-actual gap), `climate_service.py` (Lima outdoor temperature by month/hour — exogenous driver, no HW), `room_profile.py` (per-room physical metadata: floor, volume, BTU — model features, no HW), `watson_service.py` (Watson client) |
+| `app/ml/` | **ML artifacts** | `model.joblib` (serialized model, generated by `ml_pipeline/`) |
 
-### 2.2 `frontend/` — Capa de presentación React
+### 2.2 `frontend/` — React presentation layer
 
-| Subcarpeta / archivo | Capa del sistema | Propósito |
+| Subfolder / file | System layer | Purpose |
 |---|---|---|
-| `src/api/client.ts` | **Cliente HTTP** | Instancia `axios` con `baseURL = /api/v1`, **interceptor 401 → logout + redirect** con guard anti-loop |
-| `src/context/AuthContext.tsx` | **Estado global auth** | Persiste JWT en `sessionStorage` (destruido al cerrar pestaña), expone `user`, `token`, `login`, `logout`, inyecta header `Authorization: Bearer` |
-| `src/context/EmergencyContext.tsx` | **Estado global emergencias** | Polling cada 5s a `/sensors/emergencies`, mantiene `realEmergencies` / `simulatedEmergencies`, controla popup global |
-| `src/components/Layout.tsx` | **Shell UI** | Sidebar con navegación filtrada por rol RBAC, topbar, integración del `FloatingChat` Watson |
-| `src/components/Login.tsx` | **Auth UI** | Formulario de inicio de sesión + redirección post-login |
-| `src/components/FloatingChat.tsx` | **Chatbot UI** | Floating Action Button (FAB) + ventana flotante con historial de sesión Watson |
-| `src/components/SearchableSelect.tsx` | **Widget UI** | Dropdown con búsqueda fuzzy reutilizable (selección de aulas y sensores) |
-| `src/views/GlobalDashboard.tsx` | **Dashboard principal** | Monitor en vivo + simulador manual de telemetría (zona de desarrollador) |
-| `src/views/RoomSearch.tsx` | **Listado de aulas** | Tabla / grid con estado AC en tiempo real |
-| `src/views/RoomDetail.tsx` | **Detalle de aula** | Historial de lecturas + toggle físico de sensor (RBAC con reserva activa) |
-| `src/views/SensorSearch.tsx` | **Inventario sensores** | Catálogo de `SensorDevice` (sólo admin) |
-| `src/views/Devices.tsx` / `AddDevices.tsx` | **Aprovisionamiento** | Registro de hardware (aulas + sensores) en estado inicial inactivo |
-| `src/views/Infrastructure.tsx` | **Gestión Dual-Panel** | Panel doble Aulas ↔ Sensores con CRUD + lógica de orfandad |
-| `src/views/Reservations.tsx` | **Reservas** | CRUD de `Reservation` con validación de horario |
-| `src/views/UserManagement.tsx` | **Gestión de usuarios** | Aprobación / rechazo de cuentas pendientes (sólo admin) |
-| `src/views/ROIReport.tsx` | **Dashboard ROI** | KPIs energéticos, `BarChart` Tradicional vs. Cognitivo, resumen del modelo |
-| `src/views/Register.tsx` | **Registro público** | Auto-aprobación de rol `guest`; `collaborator` / `admin` quedan en `pending` |
+| `src/api/client.ts` | **HTTP client** | `axios` instance with `baseURL = /api/v1`, **401 interceptor → logout + redirect** with an anti-loop guard |
+| `src/context/AuthContext.tsx` | **Global auth state** | Persists the JWT in `sessionStorage` (destroyed when the tab closes), exposes `user`, `token`, `login`, `logout`, injects the `Authorization: Bearer` header |
+| `src/context/EmergencyContext.tsx` | **Global emergency state** | Polls `/sensors/emergencies` every 5s, keeps `realEmergencies` / `simulatedEmergencies`, controls the global popup |
+| `src/components/Layout.tsx` | **UI shell** | Sidebar with RBAC-filtered navigation, topbar, integration of the `FloatingChat` Watson widget |
+| `src/components/Login.tsx` | **Auth UI** | Login form + post-login redirect |
+| `src/components/FloatingChat.tsx` | **Chatbot UI** | Floating Action Button (FAB) + floating window with Watson session history |
+| `src/components/SearchableSelect.tsx` | **UI widget** | Reusable dropdown with fuzzy search (room and sensor selection) |
+| `src/views/GlobalDashboard.tsx` | **Main dashboard** | Live monitor + manual telemetry simulator (developer zone) |
+| `src/views/RoomSearch.tsx` | **Room listing** | Table / grid with real-time AC status |
+| `src/views/RoomDetail.tsx` | **Room detail** | Reading history + physical sensor toggle (RBAC with active reservation) |
+| `src/views/SensorSearch.tsx` | **Sensor inventory** | `SensorDevice` catalog (admin only) |
+| `src/views/Devices.tsx` / `AddDevices.tsx` | **Provisioning** | Hardware registration (rooms + sensors) in an initially inactive state |
+| `src/views/Infrastructure.tsx` | **Dual-Panel management** | Dual Rooms ↔ Sensors panel with CRUD + orphan logic |
+| `src/views/Reservations.tsx` | **Reservations** | `Reservation` CRUD with schedule validation |
+| `src/views/UserManagement.tsx` | **User management** | Approval / rejection of pending accounts (admin only) |
+| `src/views/ROIReport.tsx` | **ROI dashboard** | Energy KPIs, Traditional vs. Cognitive `BarChart`, model summary |
+| `src/views/Register.tsx` | **Public registration** | Auto-approval of the `guest` role; `collaborator` / `admin` stay `pending` |
 
-### 2.3 `database/` — Inicialización de bases de datos
+### 2.3 `database/` — Database initialization
 
-| Archivo | Propósito |
+| File | Purpose |
 |---|---|
-| `postgres/init.sql` | Script ejecutado por la imagen `postgres:15` en el primer arranque (montado en `/docker-entrypoint-initdb.d/init.sql`). Crea esquema inicial si está vacío |
-| `mongo/init.js` | Script de bootstrap de MongoDB (índices, colecciones) ejecutado por `mongo:6.0` |
+| `postgres/init.sql` | Script run by the `postgres:15` image on first boot (mounted at `/docker-entrypoint-initdb.d/init.sql`). Creates the initial schema if empty |
+| `mongo/init.js` | MongoDB bootstrap script (indexes, collections) run by `mongo:6.0` |
 
-### 2.4 `ml_pipeline/` — Entrenamiento del modelo
+### 2.4 `ml_pipeline/` — Model training
 
-| Archivo | Propósito |
+| File | Purpose |
 |---|---|
-| `extract_data.py` | Exporta lecturas históricas de MongoDB a CSV (`data/`). Lee el `expected_occupancy` **real** del `cognitive_action`, deriva `actual_occupancy` desde `co2_ppm` (mass-balance), lee/deriva `outdoor_temp` (clima Lima), adjunta **metadata física por aula** (`floor, volume_m3, ac_btu` desde `room_profile`) y escribe las filas en **orden cronológico**. El target combina carga de ocupación + carga climática exógena × factor térmico por room |
-| `train_model.py` | Entrena `HistGradientBoostingRegressor` con **early stopping** sobre `[temperature, hour_of_day, expected_occupancy, actual_occupancy, outdoor_temp, floor, volume_m3, ac_btu]`, usa **holdout cronológico** (último 20 %) y reporta **baselines** (media + heurística **solo-ocupación**). Serializa un **bundle** `{model, features, room_id_map, metadata}` vía `joblib` en `backend/app/ml/model.joblib` |
-| `data/` | Datasets de entrenamiento / validación + `room_map.json` |
+| `extract_data.py` | Exports historical readings from MongoDB to CSV (`data/`). Reads the **real** `expected_occupancy` from the `cognitive_action`, derives `actual_occupancy` from `co2_ppm` (mass balance), reads/derives `outdoor_temp` (Lima climate), attaches **per-room physical metadata** (`floor, volume_m3, ac_btu` from `room_profile`) and writes rows in **chronological order**. The target combines occupancy load + exogenous climate load × per-room thermal factor |
+| `train_model.py` | Trains a `HistGradientBoostingRegressor` with **early stopping** over `[temperature, hour_of_day, expected_occupancy, actual_occupancy, outdoor_temp, floor, volume_m3, ac_btu]`, uses a **chronological holdout** (last 20%) and reports **baselines** (mean + **occupancy-only** heuristic). Serializes a **bundle** `{model, features, room_id_map, metadata}` via `joblib` at `backend/app/ml/model.joblib` |
+| `data/` | Training / validation datasets + `room_map.json` |
 
-### 2.6 `seed_data/` — Dataset sembrado (UTEC Barranco)
+### 2.5 `seed_data/` — Seed dataset (UTEC Barranco)
 
-| Archivo | Propósito |
+| File | Purpose |
 |---|---|
-| `generate_dataset.py` | Genera ~2 meses de historial realista (rooms, horarios, sensores, reservas futuras + lecturas) e inserta en **Mongo + PostgreSQL** |
-| `README.md` | Uso, ventana temporal y modelo de asistencia |
-| `output/` | (dry-run) `sensor_readings.json` + `catalog.json` — reproducible, no versionado |
+| `generate_dataset.py` | Generates ~2 months of realistic history (rooms, schedules, sensors, future reservations + readings) and inserts into **Mongo + PostgreSQL** |
+| `DATASET_GUIDE.md` | Usage, time window and attendance model |
+| `output/` | (dry-run) `sensor_readings.json` + `catalog.json` — reproducible, not versioned |
 
-Ver sección [3.8](#38-dataset-sembrado-utec-seed_data) para el detalle del modelo de asistencia.
+See section [3.8](#38-utec-seed-dataset-seed_data) for the attendance-model detail.
 
-> ⚠️ **Contrato de features:** el modelo se guarda como **bundle** con la lista `features`. `predictive_service.py` lee `bundle["features"]` y arma la fila de inferencia en ese orden (mapa `feat → valor`), así reordenar/agregar features no rompe la inferencia en silencio. El `room_id_map` traduce `room_id → room_code`; un room desconocido en inferencia usa código `-1`. Formato legacy (estimador desnudo) aún soportado con el orden por defecto de 4 features.
+> ⚠️ **Feature contract:** the model is saved as a **bundle** with a `features` list. `predictive_service.py` reads `bundle["features"]` and assembles the inference row in that order (a `feat → value` map), so reordering/adding features does not silently break inference. `room_id_map` translates `room_id → room_code`; an unknown room at inference uses code `-1`. The legacy format (a bare estimator) is still supported with the default 4-feature order.
 
-### 2.5 Archivos raíz adicionales
+### 2.6 Additional root files
 
-| Archivo | Propósito |
+| File | Purpose |
 |---|---|
-| `docker-compose.yml` | Orquestación de los 4 servicios (backend, frontend, postgres, mongo) con healthchecks y volúmenes persistentes |
-| `generate_openapi.py` | Script de utilidad: serializa el `app.openapi()` de FastAPI a JSON estático |
-| `openapi_watson.json` | Especificación OpenAPI publicada como **custom extension** en IBM Watson Assistant |
-| `.env` | Variables de entorno (NO versionado) |
+| `docker-compose.yml` | Orchestration of the 4 services (backend, frontend, postgres, mongo) with healthchecks and persistent volumes |
+| `generate_openapi.py` | Utility script: serializes FastAPI's `app.openapi()` to static JSON |
+| `openapi_watson.json` | OpenAPI spec published as a **custom extension** in IBM Watson Assistant |
+| `.env` | Environment variables (NOT versioned) |
 
 ---
 
-## 3. Funcionalidades Críticas de Negocio
+## 3. Critical Business Features
 
-### 3.1 Control de Intervalos Fantasma (Ghost Intervals)
+### 3.1 Ghost Interval Control
 
-**Problema:** El componente `GlobalDashboard.tsx` incluye un **simulador manual de telemetría** (zona de desarrollador) controlado por un toggle `autoMode`. Sin gestión disciplinada del ciclo de vida del `setInterval`, al desactivar el toggle el intervalo previo seguía vivo en memoria, **inyectando lecturas basura** en MongoDB incluso con el simulador "apagado" desde la perspectiva del usuario. Este patrón se conoce como **Ghost Interval**.
+**Problem:** The `GlobalDashboard.tsx` component includes a **manual telemetry simulator** (developer zone) controlled by an `autoMode` toggle. Without disciplined management of the `setInterval` lifecycle, turning the toggle off left the previous interval alive in memory, **injecting junk readings** into MongoDB even with the simulator "off" from the user's perspective. This pattern is known as a **Ghost Interval**.
 
-**Solución implementada** (`frontend/src/views/GlobalDashboard.tsx:108-125`):
+**Implemented solution** (`frontend/src/views/GlobalDashboard.tsx:108-125`):
 
 ```tsx
 useEffect(() => {
@@ -210,27 +214,27 @@ useEffect(() => {
 }, [autoMode, sendReading])
 ```
 
-**Mecánica:**
+**Mechanics:**
 
-1. **Guard externo** — Si `autoMode` está en `false`, el `useEffect` retorna inmediatamente sin programar nada.
-2. **Cleanup function** — La función retornada (`() => clearInterval(interval)`) se ejecuta automáticamente por React cuando:
-   - Cambia cualquier dependencia del array `[autoMode, sendReading]` (toggle a `off` → el efecto se re-ejecuta y limpia el intervalo anterior).
-   - El componente se **desmonta** (navegación a otra ruta o cierre de sesión).
-3. **Guard interno (stale-closure safety)** — El `if (!autoMode) return` dentro del callback del `setInterval` protege contra el caso patológico en que, por **closure** capturada, el callback se ejecute con un valor obsoleto justo en la ventana entre el toggle-off y el `clearInterval`.
+1. **Outer guard** — If `autoMode` is `false`, the `useEffect` returns immediately without scheduling anything.
+2. **Cleanup function** — The returned function (`() => clearInterval(interval)`) is run automatically by React when:
+   - Any dependency in the `[autoMode, sendReading]` array changes (toggle to `off` → the effect re-runs and clears the previous interval).
+   - The component **unmounts** (navigating to another route or logging out).
+3. **Inner guard (stale-closure safety)** — The `if (!autoMode) return` inside the `setInterval` callback protects against the pathological case where, due to a captured **closure**, the callback runs with a stale value in the exact window between toggle-off and `clearInterval`.
 
-**Resultado:** Cero lecturas fantasma. Al alternar el toggle, MongoDB deja de recibir inserts en el siguiente tick (≤ 4 s).
+**Result:** Zero ghost readings. When the toggle flips, MongoDB stops receiving inserts on the next tick (≤ 4 s).
 
-El mismo patrón se aplica al **health-check polling** (`checkHealth` cada 30 s) y al polling de emergencias en `EmergencyContext.tsx:95-104`, donde la cleanup function garantiza la cancelación al cerrar sesión o cambiar de ruta protegida.
+The same pattern applies to the **health-check polling** (`checkHealth` every 30 s) and the emergency polling in `EmergencyContext.tsx:95-104`, where the cleanup function guarantees cancellation on logout or when leaving a protected route.
 
 ---
 
-### 3.2 Persistencia de Emergencias con Ventana TTL Estricta
+### 3.2 Emergency Persistence with a Strict TTL Window
 
-**Problema:** Las lecturas simuladas con `co_ppm > 50` (alerta de monóxido de carbono) se almacenan en MongoDB junto con las reales. Sin una política de expiración, una sesión de simulación pasada dejaría **alertas zombi** que el frontend seguiría considerando activas, provocando popups perpetuos y ruido en el dashboard de emergencias.
+**Problem:** Simulated readings with `co_ppm > 50` (carbon-monoxide alert) are stored in MongoDB alongside real ones. Without an expiration policy, a past simulation session would leave **zombie alerts** that the frontend would keep treating as active, causing perpetual popups and noise in the emergency dashboard.
 
-**Solución implementada** (`backend/app/routes/sensors.py:75-176`):
+**Implemented solution** (`backend/app/routes/sensors.py:75-176`):
 
-El endpoint `GET /api/v1/sensors/emergencies` aplica una **Time-To-Live (TTL) lógica** de **15 segundos** sobre las lecturas simuladas:
+The `GET /api/v1/sensors/emergencies` endpoint applies a **logical Time-To-Live (TTL)** of **15 seconds** over simulated readings:
 
 ```python
 now = datetime.now(timezone.utc)
@@ -247,40 +251,40 @@ cursor = db["sensor_readings"].find(
 ).sort("co_ppm", -1)
 ```
 
-**Mecánica:**
+**Mechanics:**
 
-| Capa | Cadencia | Acción |
+| Layer | Cadence | Action |
 |---|---|---|
-| **Frontend polling** (`EmergencyContext`) | cada **5 s** | `GET /sensors/emergencies` con Bearer token |
-| **Backend purge** (lazy) | en **cada request** | `delete_many({is_simulated: true, timestamp < now − 15s})` |
-| **Backend query** | en **cada request** | Sólo retorna documentos con `timestamp ≥ now − 15s` |
+| **Frontend polling** (`EmergencyContext`) | every **5 s** | `GET /sensors/emergencies` with Bearer token |
+| **Backend purge** (lazy) | on **every request** | `delete_many({is_simulated: true, timestamp < now − 15s})` |
+| **Backend query** | on **every request** | Returns only documents with `timestamp ≥ now − 15s` |
 
-**Estrategia "hard-fallback"** — Una alerta se cataloga como `simulated` si **cualquiera** de estas condiciones se cumple:
+**"Hard-fallback" strategy** — An alert is classified as `simulated` if **any** of these conditions holds:
 
-1. El flag `is_simulated: true` está presente en el documento.
-2. `sensor_id` o `room_id` contiene los keywords `SIM` o `TEST` (`_looks_synthetic`).
-3. El sensor **no está registrado** en PostgreSQL (`device_to_room.get(sid) is None`).
-4. El `room_id` no existe en la tabla `rooms`.
+1. The `is_simulated: true` flag is present in the document.
+2. `sensor_id` or `room_id` contains the `SIM` or `TEST` keywords (`_looks_synthetic`).
+3. The sensor is **not registered** in PostgreSQL (`device_to_room.get(sid) is None`).
+4. The `room_id` does not exist in the `rooms` table.
 
-Sólo se considera **real** si `is_simulated` es estrictamente `False` **AND** el sensor y el aula se resuelven en SQL.
+It is considered **real** only if `is_simulated` is strictly `False` **AND** both the sensor and the room resolve in SQL.
 
-**Resultado:**
+**Result:**
 
-- Al detener el simulador, **dentro de un ciclo de polling (~5 s)** la UI deja de mostrar alertas.
-- La base de datos **nunca acumula** alertas simuladas: cada nuevo poll las purga.
-- Las alertas reales (sensores físicos registrados) **no se ven afectadas** por el purge, ya que el filtro es `{"is_simulated": True, ...}`.
+- When the simulator stops, **within one polling cycle (~5 s)** the UI stops showing alerts.
+- The database **never accumulates** simulated alerts: each new poll purges them.
+- Real alerts (registered physical sensors) are **not affected** by the purge, since the filter is `{"is_simulated": True, ...}`.
 
-> ⚠️ **Nota:** Esta es una TTL **lógica** del lado de la aplicación, no la TTL nativa de MongoDB (`expireAfterSeconds`). Se prefirió el enfoque lazy para tener control transaccional sobre el momento exacto del purge y para no depender del scheduler de MongoDB (que opera con resolución de ~60 s).
+> ⚠️ **Note:** This is an application-side **logical** TTL, not MongoDB's native TTL (`expireAfterSeconds`). The lazy approach was preferred to have transactional control over the exact purge moment and to avoid depending on MongoDB's scheduler (which operates at ~60 s resolution).
 
 ---
 
-### 3.3 Gestión de Infraestructura de Doble Panel (Dual-Panel Layout)
+### 3.3 Dual-Panel Infrastructure Management
 
-**Problema:** Las vistas legacy `Devices.tsx` y `AddDevices.tsx` separaban en pestañas independientes la gestión de aulas y la gestión de sensores. Esto forzaba al admin a **alternar contexto mental** entre dos rutas para una operación intrínsecamente acoplada (un sensor pertenece a un aula).
+**Problem:** The legacy `Devices.tsx` and `AddDevices.tsx` views split room management and sensor management into independent tabs. This forced the admin to **switch mental context** between two routes for an intrinsically coupled operation (a sensor belongs to a room).
 
-**Solución implementada** (`frontend/src/views/Infrastructure.tsx`):
+**Implemented solution** (`frontend/src/views/Infrastructure.tsx`):
 
-Un único componente `Infrastructure` con un **grid CSS de 2 columnas** simétricas, altura fija de viewport:
+A single `Infrastructure` component with a symmetric **2-column CSS grid**, fixed to the viewport height:
 
 ```tsx
 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch
@@ -295,45 +299,45 @@ Un único componente `Infrastructure` con un **grid CSS de 2 columnas** simétri
 </div>
 ```
 
-**Características de diseño:**
+**Design characteristics:**
 
-| Aspecto | Implementación |
+| Aspect | Implementation |
 |---|---|
-| **Layout** | `grid grid-cols-1 lg:grid-cols-2` — single-column en móvil, dual-column en desktop |
-| **Altura** | `h-[calc(100vh-7rem)]` fija al viewport — sin scroll de página, sólo scroll interno de paneles |
-| **Simetría** | `items-stretch` + `gap-8` — ambos paneles ocupan exactamente la misma altura |
-| **Sub-navegación** | Cada panel tiene su propio `TabBar` interno (`register` / `edit`) — el estado de uno no afecta al otro |
-| **Submitting flags** | `roomSubmitting` y `sensorSubmitting` independientes — un panel puede estar enviando mientras el otro permanece interactivo |
-| **Toast compartido** | Un único `Toast` global con auto-dismiss reporta el resultado de cualquiera de los dos paneles |
+| **Layout** | `grid grid-cols-1 lg:grid-cols-2` — single-column on mobile, dual-column on desktop |
+| **Height** | `h-[calc(100vh-7rem)]` fixed to the viewport — no page scroll, only internal panel scroll |
+| **Symmetry** | `items-stretch` + `gap-8` — both panels occupy exactly the same height |
+| **Sub-navigation** | Each panel has its own internal `TabBar` (`register` / `edit`) — one's state does not affect the other |
+| **Submitting flags** | Independent `roomSubmitting` and `sensorSubmitting` — one panel can be submitting while the other stays interactive |
+| **Shared toast** | A single global `Toast` with auto-dismiss reports the result of either panel |
 
-**Componentes auxiliares reutilizados:**
+**Reused helper components:**
 
-- `<TabBar>` — Sub-componente local que renderiza pestañas `register` / `edit` con icono.
-- `<DataRow>` — Renderiza pares `label / value` con badge "modificado" si el campo cambió respecto al original.
-- `<SearchableSelect>` — Dropdown reutilizable de aulas con búsqueda fuzzy, también usado en la asignación de sensores.
+- `<TabBar>` — Local sub-component rendering `register` / `edit` tabs with an icon.
+- `<DataRow>` — Renders `label / value` pairs with a "modified" badge if the field changed from the original.
+- `<SearchableSelect>` — Reusable room dropdown with fuzzy search, also used in sensor assignment.
 
-**Resultado:** El admin tiene **contexto visual completo** de toda la infraestructura física en una sola vista. Crear un aula y asignarle inmediatamente un sensor recién registrado es un flujo continuo sin cambio de ruta.
+**Result:** The admin gets **complete visual context** of all physical infrastructure in a single view. Creating a room and immediately assigning it a freshly registered sensor is a continuous flow with no route change.
 
 ---
 
-### 3.4 Lógica de Orfandad Histórica y Herencia Segura
+### 3.4 Historical Orphan Logic and Safe Inheritance
 
-**Problema:** Eliminar un aula de la tabla `rooms` en PostgreSQL **rompería la integridad referencial** de las reservas históricas y de los sensores ya aprovisionados si existieran FKs estrictas. Para auditoría analítica (cálculo de ROI sobre rangos pasados, reportes de uso por aula extinta), **es valioso preservar los registros hijos** con el `room_id` original como referencia textual aunque el aula ya no exista físicamente.
+**Problem:** Deleting a room from the PostgreSQL `rooms` table would **break referential integrity** of historical reservations and already-provisioned sensors if strict FKs existed. For analytical auditing (ROI over past ranges, usage reports for an extinct room), **it is valuable to preserve the child records** with the original `room_id` as a textual reference even though the room no longer physically exists.
 
-**Solución implementada** — Estrategia de **Soft Delete del padre con orfandad intencional del hijo**.
+**Implemented solution** — A **Soft Delete of the parent with intentional orphaning of the child**.
 
-#### 3.4.1 Esquema sin FK estrictas
+#### 3.4.1 Schema without strict FKs
 
-Las migraciones idempotentes (`backend/app/main.py:74-123`) **eliminan deliberadamente** las constraints FK sobre `room_id` en las tablas hijas:
+The idempotent migrations (`backend/app/main.py:74-123`) **deliberately drop** the FK constraints on `room_id` in the child tables:
 
 ```python
 "ALTER TABLE sensor_devices DROP CONSTRAINT IF EXISTS sensor_devices_room_id_fkey",
 "ALTER TABLE reservations   DROP CONSTRAINT IF EXISTS reservations_room_id_fkey",
 ```
 
-La FK **sí se mantiene** sobre `schedules.room_id` porque los horarios son **configuración tightly-coupled** que debe morir con el aula. En cambio, `reservations` y `sensor_devices` quedan **sin FK** intencionalmente.
+The FK **is kept** on `schedules.room_id` because schedules are **tightly-coupled configuration** that must die with the room. By contrast, `reservations` and `sensor_devices` are intentionally left **without FK**.
 
-#### 3.4.2 Endpoint `DELETE /admin/rooms/{room_id}`
+#### 3.4.2 `DELETE /admin/rooms/{room_id}` endpoint
 
 (`backend/app/routes/admin.py:259-287`)
 
@@ -353,11 +357,11 @@ def delete_room(room_id, db, current_user):
     db.commit()
 ```
 
-Resultado: el aula desaparece de `rooms`, los `schedules` asociados se eliminan en cascada, pero las **reservas y sensores históricos persisten** apuntando a un `room_id` "fantasma".
+Result: the room disappears from `rooms`, the associated `schedules` are cascade-deleted, but the **historical reservations and sensors persist** pointing to a "ghost" `room_id`.
 
-#### 3.4.3 Detección de huérfanos al re-crear un aula
+#### 3.4.3 Orphan detection when re-creating a room
 
-Si un admin intenta **registrar un aula con un ID que ya tuvo historial previo**, el frontend dispara una verificación previa antes de permitir la creación:
+If an admin tries to **register a room with an ID that had prior history**, the frontend triggers a pre-check before allowing creation:
 
 ```ts
 // frontend/src/views/Infrastructure.tsx (handleRegisterRoom)
@@ -372,7 +376,7 @@ if (data.has_orphans) {
 }
 ```
 
-El endpoint `GET /admin/rooms/check-orphans/{room_id}` (`backend/app/routes/admin.py:122-140`) responde:
+The `GET /admin/rooms/check-orphans/{room_id}` endpoint (`backend/app/routes/admin.py:122-140`) responds:
 
 ```json
 {
@@ -382,12 +386,12 @@ El endpoint `GET /admin/rooms/check-orphans/{room_id}` (`backend/app/routes/admi
 }
 ```
 
-#### 3.4.4 Popup de confirmación por texto
+#### 3.4.4 Text-confirmation popup
 
-Si hay huérfanos, se abre un **modal de doble validación**:
+If there are orphans, a **double-validation modal** opens:
 
-1. Muestra el conteo exacto de reservas y sensores huérfanos que serán **re-asociados** al nuevo aula.
-2. Exige al admin **escribir literalmente el ID del aula** para habilitar el botón de confirmación:
+1. It shows the exact count of orphan reservations and sensors that will be **re-associated** to the new room.
+2. It requires the admin to **type the room ID literally** to enable the confirm button:
 
 ```tsx
 async function confirmOrphanInheritance() {
@@ -397,36 +401,36 @@ async function confirmOrphanInheritance() {
 }
 ```
 
-Sin coincidencia exacta carácter por carácter, el botón **permanece deshabilitado** (`disabled={orphanConfirm !== regRoomForm.id.trim()}`).
+Without an exact character-by-character match, the button **stays disabled** (`disabled={orphanConfirm !== regRoomForm.id.trim()}`).
 
-**Mecánica completa de Cascading Updates:**
+**Full Cascading Updates mechanics:**
 
-| Operación | Comportamiento |
+| Operation | Behavior |
 |---|---|
 | `DELETE /rooms/{id}` | Schedules: cascade delete. Reservations + sensors: orphan preservation |
-| `PUT /rooms/{id}` con `new_id` (rename PK) | Insert nuevo + bulk UPDATE de schedules + UPDATE condicional de sensors/reservations según flags `cascade_sensors` y `cascade_reservations` |
-| `POST /rooms` con ID ya con huérfanos | Frontend exige confirmación textual del ID; al confirmar, los huérfanos quedan re-asociados automáticamente (mismo `room_id` string) |
+| `PUT /rooms/{id}` with `new_id` (rename PK) | New insert + bulk UPDATE of schedules + conditional UPDATE of sensors/reservations per the `cascade_sensors` and `cascade_reservations` flags |
+| `POST /rooms` with an ID that already has orphans | The frontend requires textual confirmation of the ID; on confirm, the orphans are automatically re-associated (same `room_id` string) |
 
-**Resultado:**
+**Result:**
 
-- **Auditoría preservada** — ROI histórico de aulas extintas sigue computable.
-- **Re-asociación deliberada** — recrear un aula con un ID previo es un acto consciente y confirmado, no un side-effect accidental.
-- **Sin pérdida de datos** — ningún `DELETE CASCADE` destruye registros de negocio.
+- **Audit preserved** — Historical ROI of extinct rooms is still computable.
+- **Deliberate re-association** — Re-creating a room with a prior ID is a conscious, confirmed act, not an accidental side effect.
+- **No data loss** — No `DELETE CASCADE` destroys business records.
 
 ---
 
-### 3.5 Inputs Numéricos Fluidos y UI Minimalista
+### 3.5 Fluid Numeric Inputs and Minimalist UI
 
-**Problema:** Los inputs HTML nativos `<input type="number">` presentan dos fricciones de UX:
+**Problem:** Native HTML `<input type="number">` inputs present two UX frictions:
 
-1. **Spinners visibles** (las flechitas ↑↓ del lado derecho) rompen el diseño minimalista del dashboard oscuro.
-2. **Comportamiento de campo vacío** — al borrar el contenido, el `value` queda como cadena vacía `""`, y el estado de React se desincroniza del DOM. Al hacer submit con campo vacío el backend recibe `null` o `NaN` y rechaza la operación.
+1. **Visible spinners** (the ↑↓ arrows on the right) break the minimalist design of the dark dashboard.
+2. **Empty-field behavior** — when you clear the content, `value` becomes the empty string `""`, and React state desyncs from the DOM. On submit with an empty field the backend receives `null` or `NaN` and rejects the operation.
 
-**Solución implementada:**
+**Implemented solution:**
 
-#### 3.5.1 Desactivación de spinners nativos
+#### 3.5.1 Disabling native spinners
 
-Clase Tailwind compuesta aplicada a todo input numérico (`frontend/src/views/Infrastructure.tsx:396`, `Reservations.tsx:269`):
+A composed Tailwind class applied to every numeric input (`frontend/src/views/Infrastructure.tsx:396`, `Reservations.tsx:269`):
 
 ```ts
 const numInputCls = `${inputCls} [appearance:textfield]
@@ -434,14 +438,14 @@ const numInputCls = `${inputCls} [appearance:textfield]
   [&::-webkit-inner-spin-button]:appearance-none`
 ```
 
-Cubre los tres motores principales:
+Covers the three main engines:
 
-- **Firefox** → `appearance: textfield` (vía `[appearance:textfield]`).
-- **Chrome / Edge / Safari** → `::-webkit-outer-spin-button` y `::-webkit-inner-spin-button` con `appearance: none`.
+- **Firefox** → `appearance: textfield` (via `[appearance:textfield]`).
+- **Chrome / Edge / Safari** → `::-webkit-outer-spin-button` and `::-webkit-inner-spin-button` with `appearance: none`.
 
-#### 3.5.2 Recuperación de valor al perder foco
+#### 3.5.2 Value recovery on blur
 
-Patrón `onBlur` de "empty-to-default":
+An "empty-to-default" `onBlur` pattern:
 
 ```tsx
 <input
@@ -457,25 +461,25 @@ Patrón `onBlur` de "empty-to-default":
 />
 ```
 
-**Mecánica:**
+**Mechanics:**
 
-1. `onChange` permite **cadena vacía transitoria** mientras el usuario borra y reescribe (UX fluida — no fuerza `0` mientras el cursor está activo).
-2. `onBlur` se dispara cuando el input pierde el foco. Si el valor quedó vacío, se sustituye por `'0'` (o `'1'` para `expected_occupancy`).
-3. El estado `useState` mantiene el valor como **string** (`'30'`, `'22'`) y se convierte a `Number()` sólo al enviar al backend — evita corrupciones intermedias de tipo.
+1. `onChange` allows a **transient empty string** while the user deletes and retypes (fluid UX — it does not force `0` while the cursor is active).
+2. `onBlur` fires when the input loses focus. If the value was left empty, it is replaced with `'0'` (or `'1'` for `expected_occupancy`).
+3. The `useState` state keeps the value as a **string** (`'30'`, `'22'`) and converts it to `Number()` only when sending to the backend — avoiding intermediate type corruption.
 
-**Resultado:**
+**Result:**
 
-- Cero spinners visuales en todo el dashboard.
-- Cero envíos con campos vacíos.
-- Cursor libre durante la edición — no se inyectan ceros automáticos mientras el usuario teclea.
+- Zero visual spinners across the dashboard.
+- Zero submissions with empty fields.
+- Free cursor while editing — no automatic zeros injected while the user types.
 
 ---
 
-### 3.6 Fijación de Destellos en Gráficos de Rentabilidad
+### 3.6 Fixing Flashes in the ROI Charts
 
-**Problema:** El `Tooltip` de **Recharts** en el `BarChart` del dashboard de ROI (`frontend/src/views/ROIReport.tsx`) renderiza por defecto un **cursor de fondo claro semi-transparente** que se superpone a la barra hover. Sobre el tema oscuro de la plataforma (`bg-slate-800` con barras `#f97316` / `#22d3ee`), este cursor genera un **destello blanco** que parece un flash o artefacto visual.
+**Problem:** The **Recharts** `Tooltip` in the ROI dashboard `BarChart` (`frontend/src/views/ROIReport.tsx`) renders by default a **light semi-transparent background cursor** that overlays the hovered bar. Over the platform's dark theme (`bg-slate-800` with `#f97316` / `#22d3ee` bars), this cursor produces a **white flash** that looks like a glitch or visual artifact.
 
-**Solución implementada** (`frontend/src/views/ROIReport.tsx:215`):
+**Implemented solution** (`frontend/src/views/ROIReport.tsx:215`):
 
 ```tsx
 <Tooltip
@@ -484,32 +488,32 @@ Patrón `onBlur` de "empty-to-default":
 />
 ```
 
-La prop `cursor={{ fill: 'transparent' }}` hace que el `<rect>` que Recharts dibuja detrás de la barra en hover sea **completamente transparente**, eliminando el destello sin sacrificar:
+The `cursor={{ fill: 'transparent' }}` prop makes the `<rect>` that Recharts draws behind the hovered bar **fully transparent**, removing the flash without sacrificing:
 
-- La aparición del tooltip flotante (`contentStyle` con el tema dark personalizado).
-- La detección de hover (sigue funcionando para mostrar el valor).
-- El highlight implícito de la barra (los colores `#f97316` y `#22d3ee` no se alteran).
+- The floating tooltip's appearance (`contentStyle` with the custom dark theme).
+- Hover detection (still works to show the value).
+- The bar's implicit highlight (the `#f97316` and `#22d3ee` colors are unchanged).
 
-**Resultado:** Tooltip funcional, sin parpadeos ni manchas claras sobre el fondo oscuro. La identidad visual del dashboard permanece coherente.
+**Result:** A functional tooltip, with no flicker or light smudges over the dark background. The dashboard's visual identity stays coherent.
 
 ---
 
-### 3.7 Ocupación Esperada vs. Real (Feed-Forward + Feedback)
+### 3.7 Expected vs. Actual Occupancy (Feed-Forward + Feedback)
 
-**Problema:** El motor cognitivo original ajustaba el setpoint del AC usando **una sola** señal de ocupación: `expected_people`, tomada del `Schedule`/`Reservation`. Es la ocupación **planificada**. Pero un aula reservada para 40 personas a la que asisten 5 recibía enfriamiento para 40 → **desperdicio energético**, justo lo que el sistema busca evitar. La ocupación **real** nunca se medía, pese a que el sensor de CO₂ ya la contiene implícitamente.
+**Problem:** The original cognitive engine adjusted the AC setpoint using **a single** occupancy signal: `expected_people`, taken from the `Schedule`/`Reservation`. That is the **planned** occupancy. But a room booked for 40 people that only 5 attend got cooled for 40 → **energy waste**, exactly what the system aims to avoid. **Actual** occupancy was never measured, even though the CO₂ sensor already contains it implicitly.
 
-**Distinción conceptual — dos variables, nunca fusionadas:**
+**Conceptual distinction — two variables, never merged:**
 
-| Variable | Origen | Disponible | Rol de control |
+| Variable | Origin | Available | Control role |
 |---|---|---|---|
-| `expected_occupancy` | Reserva / horario (plan) | **antes** de la clase | **Feed-forward** → pre-cooling anticipado |
-| `actual_occupancy` | Inferida del `co2_ppm` (medición) | **durante** la clase | **Feedback** → corrección en lazo cerrado |
+| `expected_occupancy` | Reservation / schedule (plan) | **before** the class | **Feed-forward** → anticipatory pre-cooling |
+| `actual_occupancy` | Inferred from `co2_ppm` (measured) | **during** the class | **Feedback** → closed-loop correction |
 
-**Solución implementada** — Patrón estándar de control **feed-forward + feedback**.
+**Implemented solution** — The standard **feed-forward + feedback** control pattern.
 
-#### 3.7.1 Estimación de ocupación real desde CO₂
+#### 3.7.1 Estimating actual occupancy from CO₂
 
-`backend/app/services/occupancy_service.py` — balance de masa en estado estacionario:
+`backend/app/services/occupancy_service.py` — steady-state mass balance:
 
 ```python
 CO2_BASELINE_PPM   = 420.0   # aula vacía / aire exterior
@@ -522,11 +526,11 @@ def estimate_actual_occupancy(co2_ppm, max_capacity=None):
     return round(min(est, max_capacity) if max_capacity else est)
 ```
 
-Ambas constantes son **calibrables**; los defaults asumen un aula con ventilación ligera. Se recomienda recalibrar contra un par de conteos manuales.
+Both constants are **calibratable**; the defaults assume a lightly-ventilated room. Re-calibrating against a couple of manual headcounts is recommended.
 
-#### 3.7.2 Mezcla ponderada en el motor predictivo
+#### 3.7.2 Weighted blend in the predictive engine
 
-`backend/app/services/predictive_service.py` combina ambas señales vía `FEEDBACK_WEIGHT` (0.6 por defecto):
+`backend/app/services/predictive_service.py` combines both signals via `FEEDBACK_WEIGHT` (0.6 by default):
 
 ```python
 if actual_people is None:
@@ -536,15 +540,15 @@ else:
                        + FEEDBACK_WEIGHT * actual_people      # feed-forward + feedback
 ```
 
-- `FEEDBACK_WEIGHT = 0` → confía sólo en el plan.
-- `FEEDBACK_WEIGHT = 1` → confía sólo en el sensor.
-- `0.6` → se apoya en la realidad medida conservando anticipación durante el ramp-up inicial de la ventana de ocupación.
+- `FEEDBACK_WEIGHT = 0` → trust the plan only.
+- `FEEDBACK_WEIGHT = 1` → trust the sensor only.
+- `0.6` → leans on measured reality while keeping anticipation during the initial ramp-up of the occupancy window.
 
-En **modo ML**, ambas señales entran como features distintas: `[current_temp, hour, expected_occupancy, actual_occupancy]` — el modelo aprende a ponderarlas. En **modo heurístico**, se usa `effective_occupancy × 0.05`.
+In **ML mode**, both signals enter as distinct features: `[current_temp, hour, expected_occupancy, actual_occupancy]` — the model learns to weight them. In **heuristic mode**, `effective_occupancy × 0.05` is used.
 
-#### 3.7.3 Gap tracking (plan vs. realidad)
+#### 3.7.3 Gap tracking (plan vs. reality)
 
-Cada `cognitive_action` persistida en MongoDB ahora incluye telemetría de ocupación:
+Each `cognitive_action` persisted in MongoDB now includes occupancy telemetry:
 
 ```json
 {
@@ -555,32 +559,32 @@ Cada `cognitive_action` persistida en MongoDB ahora incluye telemetría de ocupa
 }
 ```
 
-- `occupancy_gap = expected − actual`. Positivo → sobre-reserva / no-shows; negativo → sobrecupo.
-- Sirve como dataset para **demand forecasting**, detección de no-shows y métrica de eficiencia energética.
+- `occupancy_gap = expected − actual`. Positive → over-reservation / no-shows; negative → over-capacity.
+- Serves as a dataset for **demand forecasting**, no-show detection and an energy-efficiency metric.
 
-#### 3.7.4 Coherencia física en la data sintética
+#### 3.7.4 Physical coherence in the synthetic data
 
-`ml_pipeline/extract_data.py` genera el gap de forma **físicamente coherente**: primero sortea `expected_occupancy` (plan), aplica una `attendance_rate` (0.55–0.95) + walk-ins para obtener `actual_occupancy`, y **deriva el `co2_ppm` a partir del actual** (no del expected). Así el dataset refleja la relación real CO₂ ↔ ocupación y demuestra el aporte del feedback loop.
+`ml_pipeline/extract_data.py` generates the gap in a **physically coherent** way: it first samples `expected_occupancy` (plan), applies an `attendance_rate` (0.55–0.95) + walk-ins to obtain `actual_occupancy`, and **derives `co2_ppm` from the actual** (not from the expected). Thus the dataset reflects the real CO₂ ↔ occupancy relationship and demonstrates the feedback loop's contribution.
 
-> ⚠️ **Limitación conocida:** al inicio de una ventana de ocupación el CO₂ aún no ha subido, por lo que `actual_occupancy` subestima transitoriamente. El `FEEDBACK_WEIGHT < 1` mitiga esto conservando peso en el plan. Un modelo dinámico (respuesta de primer orden del CO₂) es trabajo futuro.
+> ⚠️ **Known limitation:** at the start of an occupancy window CO₂ has not risen yet, so `actual_occupancy` transiently underestimates. `FEEDBACK_WEIGHT < 1` mitigates this by keeping weight on the plan. A dynamic model (first-order CO₂ response) is future work.
 
-**Resultado:** El AC se ajusta a quién **está** en el aula, no sólo a quién fue reservado. Aula medio vacía → CO₂ bajo → menor carga térmica estimada → STANDBY antes → ahorro energético real.
+**Result:** The AC adjusts to who **is** in the room, not only to who was booked. A half-empty room → low CO₂ → lower estimated thermal load → STANDBY sooner → real energy savings.
 
 ---
 
-### 3.8 Dataset Sembrado UTEC (seed_data)
+### 3.8 UTEC Seed Dataset (seed_data)
 
-**Propósito:** Poblar las bases de datos con un historial **realista y reproducible** del campus UTEC Barranco (Lima), sin depender de hardware físico, para demos y para alimentar el pipeline de ML.
+**Purpose:** Populate the databases with a **realistic and reproducible** history of the UTEC Barranco campus (Lima), without relying on physical hardware, for demos and to feed the ML pipeline.
 
-**Alcance** (`seed_data/generate_dataset.py`):
+**Scope** (`seed_data/generate_dataset.py`):
 
-- **Ventana:** Lun 2026-05-18 → Dom 2026-07-05 (~2 meses).
-- **6 rooms** (A403, M601, M604, M1001, M802, M602), A/C `target_temp = 20 °C`, sensor `s-<room>`.
-- **Horarios semanales** (`Schedule`) con la reserva como `expected_people`.
-- **Lecturas** (`sensor_readings`) cada 10 min por sesión + 30 min de warm-up (aula vacía).
-- **Reservas futuras** (post 5-jul) en la tabla `Reservation`, con usuario `profesor_utec`.
+- **Window:** Mon 2026-05-18 → Sun 2026-07-05 (~2 months).
+- **6 rooms** (A403, M601, M604, M1001, M802, M602), AC `target_temp = 20 °C`, sensor `s-<room>`.
+- **Weekly schedules** (`Schedule`) with the reservation as `expected_people`.
+- **Readings** (`sensor_readings`) every 10 min per session + 30 min of warm-up (empty room).
+- **Future reservations** (post Jul-5) in the `Reservation` table, with the `profesor_utec` user.
 
-**Modelo de asistencia — decremento lineal NO monótono:**
+**Attendance model — NON-monotonic linear decline:**
 
 ```python
 # Piso base: decae linealmente del "inicio" al "actual" por (room, weekday)
@@ -591,56 +595,56 @@ r = random.Random(f"{room_id}:{d.isoformat()}:{ATTENDANCE_SEED}")
 people = floor + r.choice([0, 1, 2])
 ```
 
-- El `random.Random` **keyed por (room, fecha, seed)** garantiza reproducibilidad **independiente del orden de iteración**.
-- Fechas especiales (`SPECIAL`) sobreescriben con el conteo exacto (ej. M1001 33 personas).
-- El `co2_ppm` se **deriva** de la asistencia real (mass-balance) → el `occupancy_gap` queda físicamente coherente (ver sección 3.7).
-- **Clima Lima invierno:** frío, húmedo (garúa); indoor cerca de 20 °C.
+- The `random.Random` **keyed by (room, date, seed)** guarantees reproducibility **independent of iteration order**.
+- Special dates (`SPECIAL`) override with the exact count (e.g., M1001 33 people).
+- `co2_ppm` is **derived** from the actual attendance (mass balance) → the `occupancy_gap` stays physically coherent (see section 3.7).
+- **Lima winter climate:** cool, humid (garúa); indoor near 20 °C.
 
-**Cómo poblar** (con las DB arriba, puertos en `localhost`):
+**How to populate** (with the DBs up, ports on `localhost`):
 
 ```bash
 python seed_data/generate_dataset.py --dry-run   # solo JSON en output/, sin tocar DB
 python seed_data/generate_dataset.py --wipe      # limpia sensor_readings e inserta
 ```
 
-> ✅ **Uso con ml_pipeline:** los `sensor_readings` sembrados llevan el plan real en
-> `cognitive_action.expected_occupancy` (que `extract_data.py` lee, D1) y el
-> `outdoor_temp` exógeno. Ver sección 3.9 para cómo esto permite que el modelo supere
-> al baseline heurístico.
+> ✅ **Use with ml_pipeline:** the seeded `sensor_readings` carry the real plan in
+> `cognitive_action.expected_occupancy` (which `extract_data.py` reads, D1) and the
+> exogenous `outdoor_temp`. See section 3.9 for how this lets the model beat the
+> heuristic baseline.
 
 ---
 
-### 3.9 Driver Climático Exógeno y Modelo ML que Supera al Baseline (Tier 2)
+### 3.9 Exogenous Climate Driver and an ML Model That Beats the Baseline (Tier 2)
 
-**Contexto y restricción:** El proyecto se desarrolla **sin hardware de A/C real ni
-red multi-sensor** (un solo sensor funcional que detecta datos). Por tanto no existe
-"feedback real del A/C" del cual derivar etiquetas. El objetivo de este tier no es un
-modelo de producción, sino uno **coherente y con sentido**: que responda a ocupación,
-clima y aula de forma físicamente plausible, y que **justifique el uso de ML** superando
-a la heurística.
+**Context and constraint:** The project is developed **without real AC hardware or a
+multi-sensor network** (a single functional sensor that detects data). Therefore no
+"real AC feedback" exists from which to derive labels. The goal of this tier is not a
+production model but a **coherent, sensible** one: it should respond to occupancy,
+climate and room in a physically plausible way, and **justify the use of ML** by beating
+the heuristic.
 
-**Problema (circularidad D2):** En el tier anterior el target era `actual × 0.05`, es
-decir **exactamente** la heurística de ocupación. El modelo sólo podía imitarla — nunca
-superarla (`beats_baselines: false`). Un R² alto era ilusorio: reflejaba la circularidad
-`co2 → actual_occupancy → target`, con `actual_occupancy` como feature.
+**Problem (D2 circularity):** In the previous tier the target was `actual × 0.05`, i.e.
+**exactly** the occupancy heuristic. The model could only imitate it — never beat it
+(`beats_baselines: false`). A high R² was illusory: it reflected the circularity
+`co2 → actual_occupancy → target`, with `actual_occupancy` as a feature.
 
-**Solución — introducir señal EXÓGENA que la heurística no ve:**
+**Solution — introduce an EXOGENOUS signal the heuristic cannot see:**
 
-#### 3.9.1 Temperatura exterior determinística (`climate_service.py`)
+#### 3.9.1 Deterministic outdoor temperature (`climate_service.py`)
 
-Sin API meteorológica ni HW, se modela la temperatura exterior de Lima analíticamente:
+Without a weather API or HW, Lima's outdoor temperature is modeled analytically:
 
 ```python
 outdoor_temp(ts) = media_mensual[mes] + amplitud · cos(2π · (hora − 14) / 24)
 ```
 
-- **Reproducible:** el mismo timestamp siempre da la misma temperatura.
-- **Costa de Lima:** medias mensuales (invierno ~17 °C, verano ~24 °C), amplitud diurna baja (~3 °C) por el efecto oceánico.
-- **Fuente única:** tanto `seed_data/generate_dataset.py` como `predictive_service.py` importan este módulo — el supuesto climático se define en un solo lugar.
+- **Reproducible:** the same timestamp always yields the same temperature.
+- **Lima coast:** monthly means (winter ~17 °C, summer ~24 °C), low diurnal amplitude (~3 °C) due to the ocean effect.
+- **Single source:** both `seed_data/generate_dataset.py` and `predictive_service.py` import this module — the climate assumption is defined in one place.
 
-#### 3.9.2 Target no-circular
+#### 3.9.2 Non-circular target
 
-El `target_temp_offset` combina tres términos, dos de ellos **invisibles** para la heurística:
+The `target_temp_offset` combines three terms, two of them **invisible** to the heuristic:
 
 ```python
 people_load  = actual_occupancy * 0.05 * hour_weight          # heurística ve esto
@@ -649,264 +653,264 @@ room_factor  = ROOM_THERMAL[room_id]                          # masa térmica po
 target = (people_load + climate_load) * room_factor + ruido
 ```
 
-`ROOM_THERMAL` asigna mayor carga a pisos altos (M1001 = 1.20, M802 = 1.10) y menor a
-labs bajos (M602 = 0.90) — proxy de ganancia solar/techo.
+`ROOM_THERMAL` assigns higher load to upper floors (M1001 = 1.20, M802 = 1.10) and lower
+to low labs (M602 = 0.90) — a proxy for solar/roof gain.
 
-#### 3.9.3 Baseline honesto y resultado
+#### 3.9.3 Honest baseline and result
 
-El baseline heurístico en `train_model.py` es **deliberadamente ciego** a `outdoor_temp`
-y `room_code` (sólo ocupación). Así el modelo puede ganar legítimamente:
+The heuristic baseline in `train_model.py` is **deliberately blind** to `outdoor_temp`
+and `room_code` (occupancy only). This lets the model win legitimately:
 
-| Métrica (holdout cronológico) | Valor |
+| Metric (chronological holdout) | Value |
 |---|---|
-| RMSE modelo | ~0.098 °C |
-| RMSE baseline heurístico (solo ocupación) | ~0.142 °C |
-| RMSE baseline media | ~0.53 °C |
+| Model RMSE | ~0.098 °C |
+| Heuristic baseline RMSE (occupancy only) | ~0.142 °C |
+| Mean baseline RMSE | ~0.53 °C |
 | `beats_baselines` | **true** |
 
-Features de inferencia (orden del bundle): `[temperature, hour_of_day,
-expected_occupancy, actual_occupancy, room_code, outdoor_temp]`. En inferencia,
-`outdoor_temp` se calcula con `climate_service` desde el timestamp de la lectura.
+Inference features (bundle order): `[temperature, hour_of_day,
+expected_occupancy, actual_occupancy, room_code, outdoor_temp]`. At inference,
+`outdoor_temp` is computed with `climate_service` from the reading's timestamp.
 
-> ⚠️ **Limitaciones honestas** (coherencia > optimalidad, dado el alcance):
-> - El target sigue siendo **sintético**; el modelo supera a la heurística porque usa
->   drivers que ésta ignora, no porque aprenda física real de A/C.
-> - En la ventana sembrada (invierno de Lima, exterior < baseline gran parte del tiempo)
->   la **ocupación domina**; `outdoor_temp` y `room_code` aportan señal menor
->   (importancia por permutación baja). La diversidad estacional vive sobre todo en las
->   filas sintéticas de augmentación.
-> - Reemplazar el target sintético por **feedback real del A/C** sigue pendiente
->   y es el único camino a mejoras de calidad genuinas.
+> ⚠️ **Honest limitations** (coherence > optimality, given the scope):
+> - The target is still **synthetic**; the model beats the heuristic because it uses
+>   drivers the heuristic ignores, not because it learns real AC physics.
+> - In the seeded window (Lima winter, outdoor < baseline much of the time)
+>   **occupancy dominates**; `outdoor_temp` and `room_code` contribute a smaller signal
+>   (low permutation importance). Seasonal diversity lives mostly in the synthetic
+>   augmentation rows.
+> - Replacing the synthetic target with **real AC feedback** remains pending
+>   and is the only path to genuine quality improvements.
 
 ---
 
-### 3.10 Metadata Física por Aula (Tier 3)
+### 3.10 Per-Room Physical Metadata (Tier 3)
 
-**Contexto y restricción:** Igual que Tier 2 — **sin hardware nuevo ni multi-sensor**.
-El objetivo es enriquecer el modelo con drivers físicos reales, manteniendo coherencia.
+**Context and constraint:** Same as Tier 2 — **no new hardware, no multi-sensor**.
+The goal is to enrich the model with real physical drivers while keeping coherence.
 
-**Problema que resuelve:** En Tier 2 el aula entraba al modelo como `room_code`, un
-entero **opaco** con importancia por permutación ≈ 0: el modelo no lograba explotar las
-diferencias térmicas entre aulas. Un código arbitrario no le dice al regresor *por qué*
-un aula calienta más.
+**Problem it solves:** In Tier 2 the room entered the model as `room_code`, an
+**opaque** integer with permutation importance ≈ 0: the model could not exploit the
+thermal differences between rooms. An arbitrary code does not tell the regressor *why*
+one room heats up more.
 
-**Solución (`room_profile.py`):** Se reemplaza `room_code` por **metadata física
-estática** que sí explica el comportamiento térmico:
+**Solution (`room_profile.py`):** `room_code` is replaced by **static physical
+metadata** that does explain thermal behavior:
 
-| Feature | Significado | Efecto térmico |
+| Feature | Meaning | Thermal effect |
 |---|---|---|
-| `floor` | Piso del edificio | Pisos altos (M1001=10, M802=8) → más ganancia por techo/sol |
-| `volume_m3` | Volumen interior de aire | Masa térmica |
-| `ac_btu` | Capacidad nominal del A/C | Potencia de enfriamiento disponible |
+| `floor` | Building floor | Upper floors (M1001=10, M802=8) → more roof/solar gain |
+| `volume_m3` | Interior air volume | Thermal mass |
+| `ac_btu` | Nominal AC capacity | Available cooling power |
 
-- **Sin train/serve skew:** la metadata es estática por aula → disponible idéntica en
-  entrenamiento (por `room_id`) e inferencia (`room_profile.get_metadata`).
-- **Fuente única:** `seed_data`, `extract_data.py` y `predictive_service.py` importan
-  `room_profile`; el `thermal_factor` del target y las features de metadata salen del
-  mismo módulo, así el modelo **puede recuperar** el factor desde la metadata.
+- **No train/serve skew:** the metadata is static per room → available identically in
+  training (by `room_id`) and inference (`room_profile.get_metadata`).
+- **Single source:** `seed_data`, `extract_data.py` and `predictive_service.py` import
+  `room_profile`; the target's `thermal_factor` and the metadata features come from the
+  same module, so the model **can recover** the factor from the metadata.
 
-**Por qué NO se añadieron lag features (`dT/dt`, temp previa):** requerirían historial
-por sensor en inferencia (lookup a Mongo por lectura) → riesgo de **train/serve skew** con
-un solo sensor. Se descartaron deliberadamente para mantener la inferencia limpia y sin
-estado. Quedan como trabajo futuro si se añade un buffer de historial.
+**Why lag features (`dT/dt`, previous temp) were NOT added:** they would require
+per-sensor history at inference (a Mongo lookup per reading) → risk of **train/serve
+skew** with a single sensor. They were deliberately dropped to keep inference clean and
+stateless. They remain future work if a history buffer is added.
 
-**Resultado:** `beats_baselines: true` se mantiene (RMSE modelo ~0.097 vs heurística
-~0.142). `floor` pasa a tener importancia no nula (vs `room_code` ≈ 0 en Tier 2).
+**Result:** `beats_baselines: true` is maintained (model RMSE ~0.097 vs heuristic
+~0.142). `floor` gains non-zero importance (vs `room_code` ≈ 0 in Tier 2).
 
-> ⚠️ **Limitación honesta:** la **ocupación sigue dominando** la magnitud del target, así
-> que la separación entre aulas por metadata es **modesta** (offsets muy parecidos entre
-> M1001 y M602). La metadata es físicamente correcta y disponible, pero su peso relativo
-> es bajo mientras el target siga siendo sintético y ocupación-dominado. Feedback real del
-> A/C (roadmap) es lo único que cambiaría ese balance.
+> ⚠️ **Honest limitation:** **occupancy still dominates** the target magnitude, so the
+> separation between rooms by metadata is **modest** (very similar offsets between
+> M1001 and M602). The metadata is physically correct and available, but its relative
+> weight is low while the target remains synthetic and occupancy-dominated. Real AC
+> feedback (roadmap) is the only thing that would change that balance.
 
 ---
 
-## 4. Hitos del Proyecto y Hoja de Ruta
+## 4. Project Milestones and Roadmap
 
-### Infraestructura
+### Infrastructure
 
-- [x] Base de datos políglota (MongoDB + PostgreSQL) — separación clara entre telemetría de alto volumen y entidades de negocio
-- [x] Dockerización completa con healthchecks para PostgreSQL (`pg_isready`) y MongoDB (`mongosh ping`)
-- [x] `depends_on: service_healthy` — el backend espera a que ambas bases estén listas antes de arrancar
-- [x] Volúmenes persistentes (`postgres_data`, `mongo_data`) — los datos sobreviven a `docker compose down`
-- [x] Scripts de bootstrap montados read-only en `/docker-entrypoint-initdb.d/`
-- [x] Proxy reverso Nginx para el frontend Vite (build estático servido en puerto 80)
-- [x] Migraciones de esquema **idempotentes** al startup (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, bloques `DO $$ ... $$` con guard)
-- [x] Seed automático del usuario administrador con **hash Argon2 re-aplicado en cada arranque** (self-healing ante migraciones de hashing)
-- [x] Reintentos al arrancar (5 intentos × 3 s) para tolerar arranque lento de PostgreSQL
+- [x] Polyglot database (MongoDB + PostgreSQL) — clean separation between high-volume telemetry and business entities
+- [x] Full Dockerization with healthchecks for PostgreSQL (`pg_isready`) and MongoDB (`mongosh ping`)
+- [x] `depends_on: service_healthy` — the backend waits for both databases to be ready before starting
+- [x] Persistent volumes (`postgres_data`, `mongo_data`) — data survives `docker compose down`
+- [x] Bootstrap scripts mounted read-only at `/docker-entrypoint-initdb.d/`
+- [x] Nginx reverse proxy for the Vite frontend (static build served on port 80)
+- [x] **Idempotent** schema migrations at startup (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, guarded `DO $$ ... $$` blocks)
+- [x] Automatic admin-user seed with **Argon2 hash re-applied on every boot** (self-healing against hashing migrations)
+- [x] Startup retries (5 attempts × 3 s) to tolerate slow PostgreSQL startup
 
-### Backend & Seguridad
+### Backend & Security
 
-- [x] Autenticación JWT con hashing **Argon2** (`pwdlib`) — algoritmo memory-hard recomendado por OWASP
-- [x] RBAC de 3 niveles: `admin` > `collaborator` > `guest` (jerarquía estricta)
-- [x] Tokens de **corta duración (15 minutos)** — superficie de ataque acotada en caso de exfiltración
-- [x] `sessionStorage` (no `localStorage`) — token destruido automáticamente al cerrar la pestaña
-- [x] `SECRET_KEY` **aleatorio en memoria** si no se provee en `.env` — todos los tokens caducan al reiniciar el contenedor (defensa en profundidad para entornos sin secret manager)
-- [x] Interceptor 401 con **guard anti-ciclo-infinito** — un 401 durante el flujo de logout no dispara redirecciones recursivas
-- [x] **Prevención de auto-bloqueo de admin** — el endpoint `PATCH /users/{id}/status` rechaza cambios sobre `current_user.id`
-- [x] Control físico de sensores con RBAC estricto — `collaborator` sólo puede togglear si tiene una `Reservation` activa sobre el aula del sensor
-- [x] Aprovisionamiento de sensores **siempre inactivos por defecto** (`is_active=False`, `control_enabled=False`)
-- [x] Validación de estado y rol en registro/aprobación — `guest` auto-aprobado, `collaborator` y `admin` quedan en `pending`
-- [x] API Key separada para endpoints expuestos a Watson (`/sensors/`, `/chat/`) — header `X-API-Key` con valor `WATSON_EXTENSION_KEY`
-- [x] Política de orfandad histórica intencional sobre reservas y sensores tras `DELETE` de aula
+- [x] JWT authentication with **Argon2** hashing (`pwdlib`) — memory-hard algorithm recommended by OWASP
+- [x] 3-level RBAC: `admin` > `collaborator` > `guest` (strict hierarchy)
+- [x] **Short-lived tokens (15 minutes)** — bounded attack surface in case of exfiltration
+- [x] `sessionStorage` (not `localStorage`) — token destroyed automatically when the tab closes
+- [x] **Random in-memory `SECRET_KEY`** if not provided in `.env` — all tokens expire on container restart (defense in depth for environments without a secret manager)
+- [x] 401 interceptor with an **anti-infinite-loop guard** — a 401 during the logout flow does not trigger recursive redirects
+- [x] **Admin self-lock prevention** — the `PATCH /users/{id}/status` endpoint rejects changes on `current_user.id`
+- [x] Physical sensor control with strict RBAC — a `collaborator` can only toggle if they hold an active `Reservation` on the sensor's room
+- [x] Sensor provisioning **always inactive by default** (`is_active=False`, `control_enabled=False`)
+- [x] State and role validation on registration/approval — `guest` auto-approved, `collaborator` and `admin` stay `pending`
+- [x] Separate API Key for Watson-exposed endpoints (`/sensors/`, `/chat/`) — `X-API-Key` header with the `WATSON_EXTENSION_KEY` value
+- [x] Intentional historical orphan policy over reservations and sensors after room `DELETE`
 
-### Capa Cognitiva
+### Cognitive Layer
 
-- [x] ML Pipeline con `scikit-learn` — entrenamiento, validación y serialización `joblib`
-- [x] Heurístico de bootstrap como **fallback** cuando `model.joblib` no existe (`personas × 0.05` °C de carga térmica)
-- [x] **Ocupación real vs. esperada** — estimación de `actual_occupancy` desde CO₂ (`occupancy_service.py`) + mezcla feed-forward/feedback (`FEEDBACK_WEIGHT`) + `occupancy_gap` persistido (sección 3.7)
-- [x] **Dataset sembrado UTEC** — historial reproducible de 2 meses con decremento lineal no-monótono + gap coherente (`seed_data/`, sección 3.8)
-- [x] **Hardening del ML pipeline (Tier 1)** — `expected_occupancy` real desde `cognitive_action` (D1), feature `room_code` (D5), **holdout cronológico** (D3), **baselines** media/heurística (D4), **bundle** con metadata/`sha256`/métricas (D6), **early stopping** (D7)
-- [x] **Driver climático exógeno + modelo que supera baseline (Tier 2)** — `climate_service.py` (temperatura exterior Lima determinística), feature `outdoor_temp`, factor térmico por room, target no-circular → `beats_baselines: true` (sección 3.9)
-- [x] **Metadata física por aula (Tier 3)** — `room_profile.py` reemplaza `room_code` opaco por `floor`/`volume_m3`/`ac_btu`; fuente única del `thermal_factor`; sin train/serve skew (sección 3.10)
-- [x] Persistencia de `cognitive_action` en MongoDB junto a cada lectura — campos: `ac_status` (`ON` / `STANDBY` / `DISABLED`), `target`, `model_used` (`ml` / `heuristic`)
-- [x] Integración **IBM Watson Assistant** vía proxy `/api/v1/chat/` (custom extension con OpenAPI publicado en `openapi_watson.json`)
-- [x] Motor de cálculo de **ROI energético** (`/reports/roi`): 7 días, kWh ahorrado, CO₂ evitado (kg), valor monetario (USD)
-- [x] **Simulación de ROI** cuando la base de datos es reciente y aún no hay suficiente historial — proyecta valores plausibles para que el dashboard no quede vacío en demos
+- [x] ML Pipeline with `scikit-learn` — training, validation and `joblib` serialization
+- [x] Bootstrap heuristic as a **fallback** when `model.joblib` does not exist (`people × 0.05` °C of thermal load)
+- [x] **Actual vs. expected occupancy** — `actual_occupancy` estimation from CO₂ (`occupancy_service.py`) + feed-forward/feedback blend (`FEEDBACK_WEIGHT`) + persisted `occupancy_gap` (section 3.7)
+- [x] **UTEC seed dataset** — reproducible 2-month history with non-monotonic linear decline + coherent gap (`seed_data/`, section 3.8)
+- [x] **ML pipeline hardening (Tier 1)** — real `expected_occupancy` from `cognitive_action` (D1), `room_code` feature (D5), **chronological holdout** (D3), mean/heuristic **baselines** (D4), **bundle** with metadata/`sha256`/metrics (D6), **early stopping** (D7)
+- [x] **Exogenous climate driver + model that beats the baseline (Tier 2)** — `climate_service.py` (deterministic Lima outdoor temperature), `outdoor_temp` feature, per-room thermal factor, non-circular target → `beats_baselines: true` (section 3.9)
+- [x] **Per-room physical metadata (Tier 3)** — `room_profile.py` replaces the opaque `room_code` with `floor`/`volume_m3`/`ac_btu`; single source of the `thermal_factor`; no train/serve skew (section 3.10)
+- [x] Persistence of `cognitive_action` in MongoDB alongside each reading — fields: `ac_status` (`ON` / `STANDBY` / `DISABLED`), `target`, `model_used` (`ml` / `heuristic`)
+- [x] **IBM Watson Assistant** integration via the `/api/v1/chat/` proxy (custom extension with OpenAPI published in `openapi_watson.json`)
+- [x] **Energy ROI** computation engine (`/reports/roi`): 7 days, kWh saved, CO₂ avoided (kg), monetary value (USD)
+- [x] **ROI simulation** when the database is recent and there is not yet enough history — projects plausible values so the dashboard is not empty in demos
 
 ### Frontend UI
 
-- [x] Dashboard global con sidebar filtrado por rol (RBAC en cliente reflejando RBAC en servidor)
-- [x] Vista de aulas con estado AC en **tiempo real** vía polling
-- [x] Detalle de aula: historial de lecturas + toggles de sensor con feedback inmediato
-- [x] Formularios de reserva con validación de horario (no se permiten reservas solapadas)
-- [x] Panel de gestión de usuarios — aprobación, rechazo, reactivación de cuentas
-- [x] **Doble panel simétrico** Aulas ↔ Sensores en `Infrastructure.tsx` (sección 3.3)
-- [x] Dashboard de rentabilidad — KPIs + `BarChart` Tradicional vs. Cognitivo + resumen cognitivo (modelo activo, sensores reportando, último ajuste)
-- [x] Chat flotante Watson — FAB + ventana pop-up con historial **persistido en sesión**
-- [x] Zona de herramientas de desarrollador visualmente aislada (badge dev-only en el `GlobalDashboard`)
-- [x] Protección de auto-bloqueo en UI — badge "Tú" sobre el propio usuario, acciones de bloqueo deshabilitadas
-- [x] Toast de éxito/error con auto-dismiss en todos los formularios
-- [x] **Ghost Intervals controlados** con cleanup functions en `useEffect` (sección 3.1)
-- [x] **TTL lógica de 15s** sobre alertas simuladas con polling de 5s (sección 3.2)
-- [x] **Orfandad histórica + popup de confirmación textual** al recrear aulas con ID previo (sección 3.4)
-- [x] **Inputs numéricos fluidos** sin spinners nativos + recovery `onBlur` (sección 3.5)
-- [x] **Tooltip Recharts con cursor transparente** en gráfico de ROI dark-theme (sección 3.6)
-- [x] Popup global de emergencias CO con dismiss + reopen automático ante nuevas alertas
+- [x] Global dashboard with a role-filtered sidebar (client-side RBAC mirroring server-side RBAC)
+- [x] Rooms view with **real-time** AC status via polling
+- [x] Room detail: reading history + sensor toggles with immediate feedback
+- [x] Reservation forms with schedule validation (no overlapping reservations allowed)
+- [x] User-management panel — approval, rejection, reactivation of accounts
+- [x] **Symmetric dual panel** Rooms ↔ Sensors in `Infrastructure.tsx` (section 3.3)
+- [x] Profitability dashboard — KPIs + Traditional vs. Cognitive `BarChart` + cognitive summary (active model, reporting sensors, last adjustment)
+- [x] Floating Watson chat — FAB + pop-up window with **session-persisted** history
+- [x] Visually isolated developer-tools zone (dev-only badge on the `GlobalDashboard`)
+- [x] UI self-lock protection — "You" badge over the current user, lock actions disabled
+- [x] Success/error toast with auto-dismiss on all forms
+- [x] **Controlled Ghost Intervals** with `useEffect` cleanup functions (section 3.1)
+- [x] **15s logical TTL** over simulated alerts with 5s polling (section 3.2)
+- [x] **Historical orphaning + text-confirmation popup** when re-creating rooms with a prior ID (section 3.4)
+- [x] **Fluid numeric inputs** without native spinners + `onBlur` recovery (section 3.5)
+- [x] **Recharts tooltip with a transparent cursor** in the dark-theme ROI chart (section 3.6)
+- [x] Global CO emergency popup with dismiss + automatic reopen on new alerts
 
-### Pendientes (To-Do)
+### To-Do
 
-- [ ] Despliegue en Cloud (AWS ECS / GCP Cloud Run)
-- [ ] Integración física del script Python de simulación en **Raspberry Pi**
-- [ ] Calibración del **emisor infrarrojo** para control real del aire acondicionado
-- [ ] Configuración de **túneles Ngrok persistentes** para Watson Extension (custom extension en producción)
-- [ ] Notificaciones por correo al aprobar/rechazar usuarios pendientes
-- [ ] Pipeline de **reentrenamiento automático** del modelo ML con datos reales (job programado leyendo de MongoDB)
-- [ ] Reemplazar el `target_temp_offset` **sintético** por **feedback real del A/C** — único camino a mejoras de calidad genuinas (Tier 3)
-- [ ] Sustituir el `climate_service` determinístico por una **API meteorológica real** cuando haya conectividad
-- [ ] **Lag features** (`dT/dt`, temp previa) — requieren buffer de historial por sensor en inferencia para evitar train/serve skew
-- [ ] Orientación solar por aula como feature adicional (`room_profile` ya guarda `orientation`)
-- [ ] Exportación de reportes ROI a **PDF**
-- [ ] Tests de integración — `pytest + httpx` para backend, **Playwright** para frontend
-- [ ] TTL nativa de MongoDB (`expireAfterSeconds`) como segunda línea de defensa además del purge lazy actual
-- [ ] Métricas Prometheus + dashboard Grafana sobre latencia de ingesta y tasa de inferencia ML vs. heurístico
-- [ ] Internacionalización (i18n) — actualmente español hardcoded en el frontend
-
----
-
-## 5. Arquitectura Tecnológica
-
-| Capa | Tecnología | Propósito |
-|---|---|---|
-| **API REST** | FastAPI + Uvicorn | Ingesta de sensores, RBAC, auth JWT, OpenAPI auto-generado |
-| **Base NoSQL** | MongoDB 6.0 (Motor async) | Lecturas de sensores + `cognitive_action` |
-| **Base SQL** | PostgreSQL 15 (SQLAlchemy 2.0) | Usuarios, aulas, reservas, dispositivos, schedules |
-| **Motor cognitivo** | scikit-learn + NumPy | Predicción de carga térmica (ML + heurístico) |
-| **IA conversacional** | IBM Watson Assistant | Chatbot vía custom extension |
-| **Frontend** | React 18 + Vite + TypeScript | Dashboard multi-rol con RBAC |
-| **UI / Gráficos** | Tailwind CSS + Recharts | Visualización métricas y ROI |
-| **Auth** | JWT (`python-jose`) + `pwdlib` Argon2 | Tokens 15 min + `sessionStorage` |
-| **Contenedores** | Docker + Docker Compose | Orquestación del stack completo |
-| **Proxy** | Nginx (frontend container) | Servido estático del build Vite |
+- [ ] Cloud deployment (AWS ECS / GCP Cloud Run)
+- [ ] Physical integration of the Python simulation script on a **Raspberry Pi**
+- [ ] Calibration of the **infrared emitter** for real AC control
+- [ ] Setup of **persistent Ngrok tunnels** for the Watson Extension (custom extension in production)
+- [ ] Email notifications when approving/rejecting pending users
+- [ ] **Automatic retraining** pipeline of the ML model with real data (scheduled job reading from MongoDB)
+- [ ] Replace the **synthetic** `target_temp_offset` with **real AC feedback** — the only path to genuine quality improvements (Tier 3)
+- [ ] Replace the deterministic `climate_service` with a **real weather API** when connectivity is available
+- [ ] **Lag features** (`dT/dt`, previous temp) — require a per-sensor history buffer at inference to avoid train/serve skew
+- [ ] Per-room solar orientation as an additional feature (`room_profile` already stores `orientation`)
+- [ ] Export ROI reports to **PDF**
+- [ ] Integration tests — `pytest + httpx` for the backend, **Playwright** for the frontend
+- [ ] Native MongoDB TTL (`expireAfterSeconds`) as a second line of defense in addition to the current lazy purge
+- [ ] Prometheus metrics + Grafana dashboard on ingest latency and ML-vs-heuristic inference rate
+- [ ] Internationalization (i18n) — currently Spanish is hardcoded in the frontend
 
 ---
 
-## 6. Endpoints API
+## 5. Technology Architecture
 
-### Auth (público)
-
-| Método | Ruta | Descripción |
+| Layer | Technology | Purpose |
 |---|---|---|
-| `POST` | `/api/v1/auth/login` | Obtener JWT (form-encoded) |
-| `POST` | `/api/v1/auth/register` | Registrar cuenta nueva |
-
-### Sensores (requiere API Key `X-API-Key`)
-
-| Método | Ruta | Descripción |
-|---|---|---|
-| `POST` | `/api/v1/sensors/` | Ingestar lectura IoT + ejecutar acción cognitiva |
-| `GET` | `/api/v1/sensors/` | Listar lecturas filtrables por `room_id`, `sensor_id` |
-| `GET` | `/api/v1/sensors/emergencies` | Alertas CO > 50 ppm (ventana 15 s) |
-| `PUT` | `/api/v1/sensors/{id}/control` | Activar/desactivar sensor (admin o collaborator con reserva activa) |
-
-### Admin (requiere JWT)
-
-| Método | Ruta | Descripción |
-|---|---|---|
-| `GET / POST` | `/api/v1/admin/rooms` | Listar / crear aulas con ID explícito |
-| `GET` | `/api/v1/admin/rooms/{id}` | Detalle de aula |
-| `GET` | `/api/v1/admin/rooms/check-orphans/{id}` | Verificar registros huérfanos asociados a un ID |
-| `PUT` | `/api/v1/admin/rooms/{id}` | Editar / renombrar PK con flags de cascade |
-| `DELETE` | `/api/v1/admin/rooms/{id}` | Eliminar aula (orfandad histórica de hijos) |
-| `POST` | `/api/v1/admin/setup-rooms` | Upsert legacy de aula + horarios |
-| `GET / POST` | `/api/v1/admin/devices` | Listar / registrar sensores |
-| `POST` | `/api/v1/admin/sensors` | Aprovisionar sensor (inactivo por defecto) |
-| `PUT` | `/api/v1/admin/sensors/{id}` | Reasignar / renombrar sensor |
-| `GET` | `/api/v1/admin/users` | Listar usuarios (admin) |
-| `PATCH` | `/api/v1/admin/users/{id}/status` | Cambiar estado de cuenta (no auto-bloqueo) |
-| `GET / POST` | `/api/v1/admin/reservations` | Listar / crear reservas |
-
-### Reportes (requiere JWT admin)
-
-| Método | Ruta | Descripción |
-|---|---|---|
-| `GET` | `/api/v1/reports/roi` | Cálculo de ROI energético (7 días) |
-
-### Chat (requiere API Key)
-
-| Método | Ruta | Descripción |
-|---|---|---|
-| `POST` | `/api/v1/chat/` | Enviar mensaje a Watson Assistant |
+| **REST API** | FastAPI + Uvicorn | Sensor ingest, RBAC, JWT auth, auto-generated OpenAPI |
+| **NoSQL store** | MongoDB 6.0 (Motor async) | Sensor readings + `cognitive_action` |
+| **SQL store** | PostgreSQL 15 (SQLAlchemy 2.0) | Users, rooms, reservations, devices, schedules |
+| **Cognitive engine** | scikit-learn + NumPy | Thermal-load prediction (ML + heuristic) |
+| **Conversational AI** | IBM Watson Assistant | Chatbot via custom extension |
+| **Frontend** | React 18 + Vite + TypeScript | Multi-role dashboard with RBAC |
+| **UI / Charts** | Tailwind CSS + Recharts | Metrics and ROI visualization |
+| **Auth** | JWT (`python-jose`) + `pwdlib` Argon2 | 15-min tokens + `sessionStorage` |
+| **Containers** | Docker + Docker Compose | Full-stack orchestration |
+| **Proxy** | Nginx (frontend container) | Static serving of the Vite build |
 
 ---
 
-## 7. Roles y Permisos (RBAC)
+## 6. API Endpoints
 
-| Rol | Acceso |
+### Auth (public)
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/v1/auth/login` | Obtain a JWT (form-encoded) |
+| `POST` | `/api/v1/auth/register` | Register a new account |
+
+### Sensors (requires API Key `X-API-Key`)
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/v1/sensors/` | Ingest an IoT reading + run the cognitive action |
+| `GET` | `/api/v1/sensors/` | List readings filterable by `room_id`, `sensor_id` |
+| `GET` | `/api/v1/sensors/emergencies` | CO > 50 ppm alerts (15 s window) |
+| `PUT` | `/api/v1/sensors/{id}/control` | Enable/disable a sensor (admin or collaborator with an active reservation) |
+
+### Admin (requires JWT)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET / POST` | `/api/v1/admin/rooms` | List / create rooms with an explicit ID |
+| `GET` | `/api/v1/admin/rooms/{id}` | Room detail |
+| `GET` | `/api/v1/admin/rooms/check-orphans/{id}` | Check orphan records associated with an ID |
+| `PUT` | `/api/v1/admin/rooms/{id}` | Edit / rename the PK with cascade flags |
+| `DELETE` | `/api/v1/admin/rooms/{id}` | Delete a room (historical orphaning of children) |
+| `POST` | `/api/v1/admin/setup-rooms` | Legacy upsert of a room + schedules |
+| `GET / POST` | `/api/v1/admin/devices` | List / register sensors |
+| `POST` | `/api/v1/admin/sensors` | Provision a sensor (inactive by default) |
+| `PUT` | `/api/v1/admin/sensors/{id}` | Reassign / rename a sensor |
+| `GET` | `/api/v1/admin/users` | List users (admin) |
+| `PATCH` | `/api/v1/admin/users/{id}/status` | Change account status (no self-lock) |
+| `GET / POST` | `/api/v1/admin/reservations` | List / create reservations |
+
+### Reports (requires admin JWT)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/v1/reports/roi` | Energy ROI computation (7 days) |
+
+### Chat (requires API Key)
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/v1/chat/` | Send a message to Watson Assistant |
+
+---
+
+## 7. Roles and Permissions (RBAC)
+
+| Role | Access |
 |---|---|
-| `admin` | Todo: usuarios, sensores, reservas, ROI, aprovisionamiento |
-| `collaborator` | Dashboard, aulas, reservas propias, control de sensor (con reserva activa) |
-| `guest` | Dashboard y aulas en modo solo lectura |
+| `admin` | Everything: users, sensors, reservations, ROI, provisioning |
+| `collaborator` | Dashboard, rooms, own reservations, sensor control (with an active reservation) |
+| `guest` | Dashboard and rooms in read-only mode |
 
-**Flujo de aprobación:**
+**Approval flow:**
 
-- Cuentas nuevas con rol `guest` se aprueban automáticamente (`status = active`).
-- Roles `collaborator` y `admin` quedan en estado `pending` hasta aprobación manual desde **Gestión de Usuarios**.
+- New accounts with the `guest` role are approved automatically (`status = active`).
+- The `collaborator` and `admin` roles stay `pending` until manual approval from **User Management**.
 
 ---
 
-## 8. Motor Cognitivo — Flujo de Ingesta
+## 8. Cognitive Engine — Ingest Flow
 
 ```
-Lectura IoT (POST /sensors/)
+IoT reading (POST /sensors/)
         │
         ▼
-  ¿Sensor activo?  ──No──▶  Descartar (no guardar)
-        │ Sí
+  Sensor active?  ──No──▶  Drop (do not save)
+        │ Yes
         ▼
-  ¿Control habilitado?  ──No──▶  ac_status = DISABLED
-        │ Sí
+  Control enabled?  ──No──▶  ac_status = DISABLED
+        │ Yes
         ▼
-  Buscar contexto de aula (horario, target_temp, ocupación esperada, max_capacity)
+  Look up room context (schedule, target_temp, expected occupancy, max_capacity)
         │
         ▼
-  Ocupación efectiva = feed-forward (expected/reserva) ⊕ feedback (actual desde CO₂)
+  Effective occupancy = feed-forward (expected/reservation) ⊕ feedback (actual from CO₂)
     effective = (1−w)·expected + w·actual      (w = FEEDBACK_WEIGHT; actual=None → expected)
         │
         ▼
-  Calcular carga térmica
-    ├─ ML model (scikit-learn): predict([temp, hora, expected, actual])
-    └─ Heurístico: effective × 0.05 (fallback si no hay model.joblib)
+  Compute thermal load
+    ├─ ML model (scikit-learn): predict([temp, hour, expected, actual])
+    └─ Heuristic: effective × 0.05 (fallback if no model.joblib)
         │
         ▼
   adjusted_target = target_temp − thermal_load
@@ -914,28 +918,28 @@ Lectura IoT (POST /sensors/)
                           ──▶  ac_status = STANDBY
         │
         ▼
-  Guardar en MongoDB (lectura + cognitive_action)
+  Save to MongoDB (reading + cognitive_action)
 ```
 
 ---
 
-## 9. Variables de Entorno
+## 9. Environment Variables
 
-| Variable | Default | Descripción |
+| Variable | Default | Description |
 |---|---|---|
-| `MONGO_URI` | `mongodb://mongo:27017` | URI de conexión MongoDB |
-| `POSTGRES_URI` | `postgresql://postgres:postgres@postgres:5432/climate_db` | URI PostgreSQL (compuesto vía compose) |
-| `POSTGRES_USER` | `postgres` | Usuario PostgreSQL |
-| `POSTGRES_PASSWORD` | `postgres` | Contraseña PostgreSQL |
-| `POSTGRES_DB` | `climate_db` | Nombre de la base de datos PostgreSQL |
-| `SECRET_KEY` | *(aleatorio en memoria)* | Clave de firma JWT — establecer en producción |
-| `ALGORITHM` | `HS256` | Algoritmo JWT |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | Vida útil del token JWT |
-| `WATSON_API_KEY` | `""` | API key de IBM Watson Assistant |
-| `WATSON_URL` | `""` | Endpoint de la instancia Watson |
-| `WATSON_ASSISTANT_ID` | `""` | ID del asistente Watson |
-| `WATSON_EXTENSION_KEY` | `""` | Clave compartida para custom extension Watson (header `X-API-Key`) |
+| `MONGO_URI` | `mongodb://mongo:27017` | MongoDB connection URI |
+| `POSTGRES_URI` | `postgresql://postgres:postgres@postgres:5432/climate_db` | PostgreSQL URI (composed via compose) |
+| `POSTGRES_USER` | `postgres` | PostgreSQL user |
+| `POSTGRES_PASSWORD` | `postgres` | PostgreSQL password |
+| `POSTGRES_DB` | `climate_db` | PostgreSQL database name |
+| `SECRET_KEY` | *(random in memory)* | JWT signing key — set in production |
+| `ALGORITHM` | `HS256` | JWT algorithm |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | JWT token lifetime |
+| `WATSON_API_KEY` | `""` | IBM Watson Assistant API key |
+| `WATSON_URL` | `""` | Watson instance endpoint |
+| `WATSON_ASSISTANT_ID` | `""` | Watson assistant ID |
+| `WATSON_EXTENSION_KEY` | `""` | Shared key for the Watson custom extension (`X-API-Key` header) |
 
 ---
 
-> Para guía de instalación y comandos de despliegue, ver [README.md](./README.md).
+> For the installation guide and deployment commands, see [README.md](./README.md).
