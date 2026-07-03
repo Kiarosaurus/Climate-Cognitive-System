@@ -686,10 +686,11 @@ and `room_code` (occupancy only). This lets the model win legitimately:
 
 | Metric (chronological holdout) | Value |
 |---|---|
-| Model RMSE | 0.0966 °C |
+| Model RMSE | 0.0829 °C |
 | Model R² | 0.9646 |
-| Heuristic baseline RMSE (occupancy only) | 0.1416 °C |
-| Mean baseline RMSE | 0.5343 °C |
+| Heuristic baseline RMSE (occupancy only) | 0.1215 °C |
+| Mean baseline RMSE | 0.4516 °C |
+| TimeSeriesSplit CV RMSE (3 folds) | 0.1172 ± 0.0253 °C |
 | `beats_baselines` | **true** |
 
 Values are read from the shipped bundle's `metadata.metrics` (`model.joblib`);
@@ -697,11 +698,11 @@ they are regenerated on every `train_model.py` run and will vary slightly with
 the seeded data.
 
 The label carries irreducible noise σ = 0.08 °C (`extract_data.py`), so the best
-achievable RMSE is ≈ 0.08 — the model at 0.0966 sits near that floor, which also
+achievable RMSE is ≈ 0.08 — the model at 0.0829 sits at that floor, which also
 rules out overfitting on the synthetic target. Beyond the single holdout, an
 expanding-window `TimeSeriesSplit` CV (3 folds over the real rows) and a per-room
-test RMSE are reported and stored in the bundle metadata on every new
-`train_model.py` run (the currently shipped bundle predates those keys).
+test RMSE (0.070–0.102 °C across the six rooms) are reported and stored in the
+bundle metadata.
 
 The gate is enforced at **serve time**: `predictive_service.load_model` refuses
 to serve a bundle whose `beats_baselines` is `false` and stays on the transparent
@@ -717,9 +718,10 @@ reading's timestamp.
 > - The target is still **synthetic**; the model beats the heuristic because it uses
 >   drivers the heuristic ignores, not because it learns real AC physics.
 > - In the seeded window (Lima winter, outdoor < baseline much of the time)
->   **occupancy dominates**; `outdoor_temp` and `room_code` contribute a smaller signal
->   (low permutation importance). Seasonal diversity lives mostly in the synthetic
->   augmentation rows.
+>   **occupancy dominates**; `outdoor_temp` and the room-metadata features contribute
+>   a smaller signal (low permutation importance). The current dataset is 100% seed
+>   rows (the synthetic augmentation only kicks in when real data is sparse), so
+>   seasonal diversity is limited to the seeded May–July window.
 > - Replacing the synthetic target with **real AC feedback** remains pending
 >   and is the only path to genuine quality improvements.
 
@@ -756,8 +758,12 @@ skew** with a single sensor. They were deliberately dropped to keep inference cl
 stateless. They remain future work if a history buffer is added.
 
 **Result:** `beats_baselines: true` is maintained (bundle metrics: model RMSE
-0.0966 vs heuristic 0.1416). `floor` gains non-zero importance (vs `room_code` ≈ 0
-in Tier 2).
+0.0829 vs heuristic 0.1215). The per-room test RMSE stays even across all six
+rooms (0.070–0.102 °C, stored in the bundle metadata). In the current all-seed
+training window the permutation importance of the metadata features rounds to
+≈ 0 — like `room_code` before them — because occupancy dominates the label; the
+metadata's value is that it is physically meaningful and identically available
+at train and serve time, not that it moves this synthetic target.
 
 > ⚠️ **Honest limitation:** **occupancy still dominates** the target magnitude, so the
 > separation between rooms by metadata is **modest** (very similar offsets between
