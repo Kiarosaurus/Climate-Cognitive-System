@@ -11,14 +11,17 @@ from app.database_sql import get_db_sql
 
 logger = logging.getLogger(__name__)
 
-_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+_api_key_header = APIKeyHeader(name="X-API-Key", scheme_name="APIKeyHeader", auto_error=False)
 
 # LÍNEA NUEVA — segundo canal para el JWT, solo para los callouts de Watson.
 # Watson no manda de forma confiable un header llamado "Authorization" (parece
 # reservarlo para su propio manejo de auth de la extension), así que las
 # actions bindean el JWT aquí en vez de "Authorization". El login normal de la
 # web sigue mandando "Authorization: Bearer <token>" sin cambios.
-_watson_jwt_header = APIKeyHeader(name="X-Watson-JWT", auto_error=False)
+# scheme_name explícito: sin esto, FastAPI nombra el esquema de seguridad por
+# la clase Python (APIKeyHeader) y lo confunde con _api_key_header de arriba,
+# aunque apunten a headers distintos (X-API-Key vs X-Watson-JWT).
+_watson_jwt_header = APIKeyHeader(name="X-Watson-JWT", scheme_name="WatsonJWTHeader", auto_error=False)
 
 
 async def require_api_key(key: str = Security(_api_key_header)):
