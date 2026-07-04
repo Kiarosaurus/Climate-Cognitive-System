@@ -57,9 +57,15 @@ def _send_message_sync(session_id: str, text: str, skill_variables: dict | None 
         **kwargs,
     ).get_result()
 
+    # ANTES: solo miraba generics[0] — si Watson mandaba cualquier otra cosa
+    # (pausa, opciones, etc.) antes del texto, se perdía la respuesta real
+    # aunque la action sí la hubiera calculado bien.
+    # AHORA: junta TODOS los fragmentos de tipo "text" del turno, sin importar
+    # en qué posición vengan.
     generics = response.get("output", {}).get("generic", [])
-    if generics and generics[0].get("response_type") == "text":
-        return generics[0].get("text")
+    texts = [g.get("text") for g in generics if g.get("response_type") == "text" and g.get("text")]
+    if texts:
+        return "\n".join(texts)
     return "No hubo respuesta de Watson."
 
 
