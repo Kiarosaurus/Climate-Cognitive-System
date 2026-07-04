@@ -86,6 +86,15 @@ class ReservationIn(BaseModel):
     expected_occupancy: int
 
 
+# ARCHIVO NUEVO — no existía antes. Solo hora ("HH:MM" o "HH:MM:SS"), sin
+# fecha: pensado para que Watson pida nada más "¿a qué hora?" en vez de armar
+# el datetime completo (fecha+hora en formato ISO), que es donde fallaba el
+# formato que mandaba la action de editar reserva.
+class ReservationTimeUpdateIn(BaseModel):
+    start_time: str
+    end_time: str
+
+
 # ============================================================================
 # BLOQUE NUEVO — todas estas clases (RoomOut, RoomPolicyOut, SensorDeviceOut,
 # UserOut, ReservationOut) no existían antes. Antes cada endpoint devolvía un
@@ -888,6 +897,80 @@ def update_reservation(
     logger.info(
         "Reservation id=%d updated by '%s' for room_id=%s.",
         reservation.id, current_user.username, reservation.room_id,
+    )
+    return {
+        "id": reservation.id,
+        "room_id": reservation.room_id,
+        "user_id": reservation.user_id,
+        "start_time": reservation.start_time.isoformat(),
+        "end_time": reservation.end_time.isoformat(),
+        "expected_occupancy": reservation.expected_occupancy,
+    }
+
+
+# ENDPOINT NUEVO — cambia solo la hora de una reserva, manteniendo el mismo día.
+# Pensado para Watson: la action de "editar reserva" solo pide hora_inicio y
+# hora_fin (slots tipo Time), sin fecha — evita el datetime completo en
+# formato ISO que causaba fallas cuando el slot combinado de fecha+hora no
+# serializaba como se esperaba. Para cambiar de día, la guía indica cancelar
+# la reserva y crear una nueva (no hace falta este endpoint para eso).
+@router.patch(
+    "/reservations/{reservation_id}/time",
+    response_model=ReservationOut,
+    responses={401: {"model": ErrorDetail}, 403: {"model": ErrorDetail}, 404: {"model": ErrorDetail}, 409: {"model": ErrorDetail}},
+)
+def update_reservation_time(
+    reservation_id: int,
+    payload: ReservationTimeUpdateIn,
+    db: Session = Depends(get_db_sql),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin_or_collaborator(current_user)
+
+    reservation = db.query(Reservation).filter(Reservation.id == reservation_id).first()
+    if not reservation:
+        raise HTTPException(status_code=404, detail=f"Reservation id={reservation_id} not found.")
+
+    start_t = _parse_time(payload.start_time)
+    end_t = _parse_time(payload.end_time)
+
+    # Mismo día de la reserva original — solo cambia la hora.
+    day = reservation.start_time.date()
+    new_start = datetime.combine(day, start_t)
+    new_end = datetime.combine(day, end_t)
+
+    if new_end <= new_start:
+        raise HTTPException(status_code=400, detail="end_time must be after start_time.")
+
+    overlap = db.query(Reservation).filter(
+        Reservation.id != reservation_id,
+        Reservation.room_id == reservation.room_id,
+        Reservation.start_time < new_end,
+        Reservation.end_time > new_start,
+    ).first()
+    if overlap:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Room '{reservation.room_id}' already has a reservation overlapping "
+                f"{new_start.isoformat()} – {new_end.isoformat()} (reservation id={overlap.id})."
+            ),
+        )
+
+    reservation.start_time = new_start
+    reservation.end_time = new_end
+
+    try:
+        db.commit()
+        db.refresh(reservation)
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.error("DB error updating reservation time: %s", exc)
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+
+    logger.info(
+        "Reservation id=%d time updated by '%s' → %s - %s.",
+        reservation.id, current_user.username, new_start.isoformat(), new_end.isoformat(),
     )
     return {
         "id": reservation.id,
