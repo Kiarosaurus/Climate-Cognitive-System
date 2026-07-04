@@ -194,6 +194,33 @@ def inject_authorization_header(spec: dict) -> dict:
     return spec
 
 
+# ── Strip OAuth2 security so Watson treats Authorization as a plain param ────
+
+def strip_oauth2_security(spec: dict) -> dict:
+    """Remove the OAuth2PasswordBearer security requirement from every operation.
+
+    FastAPI auto-declares "security": [{"OAuth2PasswordBearer": []}] on any
+    JWT-protected route. Watson's custom-extension runtime recognizes that as
+    a security scheme it should manage itself (like it does with the X-API-Key
+    in the extension's Authentication tab) and overrides whatever value was
+    manually bound to the Authorization header parameter — so the real
+    per-user JWT (Bearer {jwt}) never reaches the API; only APIKeyHeader is
+    actually configured in the extension, so OAuth2PasswordBearer never gets a
+    credential and Watson just drops the header. We manage the JWT ourselves
+    via the explicit Authorization parameter (see inject_authorization_header),
+    so this requirement is redundant for Watson and actively harmful — remove
+    it, leaving Authorization as an ordinary bindable header parameter.
+    """
+    for methods in spec.get("paths", {}).values():
+        for op in methods.values():
+            if not isinstance(op, dict) or "security" not in op:
+                continue
+            op["security"] = [sec for sec in op["security"] if "OAuth2PasswordBearer" not in sec]
+            if not op["security"]:
+                del op["security"]
+    return spec
+
+
 # ── Inline $ref used as a plain object property ───────────────────────────────
 
 def inline_object_property_refs(spec: dict) -> dict:
@@ -252,6 +279,7 @@ def main():
     # Aplicamos la inyección de los parámetros faltantes
     spec = inject_missing_parameters(spec)
     spec = inject_authorization_header(spec)
+    spec = strip_oauth2_security(spec)
     spec = inline_object_property_refs(spec)
 
     spec["servers"] = [{"url": args.server}]
