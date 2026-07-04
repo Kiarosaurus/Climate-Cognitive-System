@@ -7,7 +7,11 @@ from app.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 pwd_context = PasswordHash.recommended()
 
 # tokenUrl must match the registered route prefix
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+# auto_error=False: get_current_user checks a second header (X-Watson-JWT) as a
+# fallback for the Watson custom extension, which appears to drop a manually
+# bound "Authorization" header regardless of configuration. Letting this raise
+# automatically would short-circuit before that fallback ever runs.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 
 def hash_password(password: str) -> str:

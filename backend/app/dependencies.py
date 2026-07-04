@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 from fastapi import Security, Depends, HTTPException, status
 from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
@@ -12,6 +13,13 @@ logger = logging.getLogger(__name__)
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
+# LÍNEA NUEVA — segundo canal para el JWT, solo para los callouts de Watson.
+# Watson no manda de forma confiable un header llamado "Authorization" (parece
+# reservarlo para su propio manejo de auth de la extension), así que las
+# actions bindean el JWT aquí en vez de "Authorization". El login normal de la
+# web sigue mandando "Authorization: Bearer <token>" sin cambios.
+_watson_jwt_header = APIKeyHeader(name="X-Watson-JWT", auto_error=False)
+
 
 async def require_api_key(key: str = Security(_api_key_header)):
     if WATSON_EXTENSION_KEY and key != WATSON_EXTENSION_KEY:
@@ -19,7 +27,8 @@ async def require_api_key(key: str = Security(_api_key_header)):
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    bearer_token: Optional[str] = Depends(oauth2_scheme),
+    watson_token: Optional[str] = Security(_watson_jwt_header),
     db: Session = Depends(get_db_sql),
 ):
     # Deliberately sync: FastAPI runs sync dependencies in the threadpool, so the
@@ -27,11 +36,22 @@ def get_current_user(
     # would stall the loop on every authenticated request.
     from app.models.admin import User  # local import avoids circular at module load
 
+    # ANTES: un solo `token: str = Depends(oauth2_scheme)` con auto_error=True,
+    # que ya fallaba con 401 antes de llegar aquí si "Authorization" no llegaba.
+    # AHORA: acepta el JWT de cualquiera de los dos headers, el que sí llegue.
+    token = bearer_token or watson_token
+
     credentials_exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     try:
         payload = decode_token(token)
         username: str = payload.get("sub")
