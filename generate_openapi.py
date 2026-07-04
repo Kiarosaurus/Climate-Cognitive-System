@@ -42,6 +42,13 @@ def _walk(obj):
         if has_null:
             rest = {k: v for k, v in obj.items() if k != "anyOf"}
             if len(non_null) == 1:
+                # Watson requires a $ref to appear ALONE — no sibling keys (nullable,
+                # title, etc.) or its strict importer rejects the whole schema
+                # ("must NOT have additional properties" / "must match oneOf").
+                # Optionality is already conveyed by the field being absent from
+                # the parent's "required" list, so just drop nullable here.
+                if "$ref" in non_null[0]:
+                    return _walk(non_null[0])
                 merged = {**non_null[0], **rest, "nullable": True}
                 return _walk(merged)
             else:
@@ -187,6 +194,33 @@ def inject_authorization_header(spec: dict) -> dict:
     return spec
 
 
+# ── Inline $ref used as a plain object property ───────────────────────────────
+
+def inline_object_property_refs(spec: dict) -> dict:
+    """Watson's importer rejects a bare $ref used as an object PROPERTY's schema
+    (e.g. SensorReadingOut.properties.cognitive_action = {"$ref": "...CognitiveActionOut"})
+    with "must NOT have additional properties" / "must match oneOf" — even though
+    the identical $ref works fine inside an array's "items" or as a top-level
+    request/response body schema. Inline those specific refs (copy the target
+    schema directly into the property) so nested Pydantic models still work.
+    """
+    import copy
+
+    schemas = spec.get("components", {}).get("schemas", {})
+
+    for schema in schemas.values():
+        props = schema.get("properties")
+        if not isinstance(props, dict):
+            continue
+        for key, val in list(props.items()):
+            if isinstance(val, dict) and set(val.keys()) == {"$ref"}:
+                target_name = val["$ref"].rsplit("/", 1)[-1]
+                target = schemas.get(target_name)
+                if target is not None:
+                    props[key] = copy.deepcopy(target)
+    return spec
+
+
 # ── main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -218,6 +252,7 @@ def main():
     # Aplicamos la inyección de los parámetros faltantes
     spec = inject_missing_parameters(spec)
     spec = inject_authorization_header(spec)
+    spec = inline_object_property_refs(spec)
 
     spec["servers"] = [{"url": args.server}]
     print(f"  Server URL       : {args.server}")
