@@ -14,6 +14,8 @@ from app.core.timeutils import to_local
 from app.database import get_db
 from app.database_sql import get_db_sql
 from app.models.admin import Room, Schedule, SensorDevice, Reservation, User, STATUSES, CONTROL_POLICIES
+# LÍNEA NUEVA — antes este import no existía. Trae el modelo de error compartido.
+from app.models.common import ErrorDetail
 from app.dependencies import get_current_user
 from app.services.predictive_service import calculate_cooling_demand
 
@@ -84,6 +86,54 @@ class ReservationIn(BaseModel):
     expected_occupancy: int
 
 
+# ============================================================================
+# BLOQUE NUEVO — todas estas clases (RoomOut, RoomPolicyOut, SensorDeviceOut,
+# UserOut, ReservationOut) no existían antes. Antes cada endpoint devolvía un
+# dict/list "a mano" sin declarar su forma, por eso Watson no podía mapear
+# los campos de la respuesta en el panel "Response".
+# ============================================================================
+# Declared so Watson's extension "Response" panel can expose these fields as
+# insertable variables — FastAPI otherwise emits an empty schema for plain
+# dict/list returns, leaving Watson with nothing to map.
+
+class RoomOut(BaseModel):
+    id: str
+    name: str
+    max_capacity: int
+    target_temp: float
+    control_policy: Optional[str] = None
+
+
+class RoomPolicyOut(BaseModel):
+    id: str
+    control_policy: str
+
+
+class SensorDeviceOut(BaseModel):
+    sensor_id: str
+    room_id: Optional[str] = None
+    is_active: bool
+    control_enabled: bool
+
+
+class UserOut(BaseModel):
+    user_id: int
+    username: str
+    role: str
+    status: str
+
+
+class ReservationOut(BaseModel):
+    id: int
+    room_id: str
+    room_name: Optional[str] = None
+    user_id: int
+    username: Optional[str] = None
+    start_time: str
+    end_time: str
+    expected_occupancy: int
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _parse_time(t: str) -> dt_time:
@@ -105,7 +155,9 @@ def _require_admin_or_collaborator(current_user: User):
 
 # ── Room endpoints ────────────────────────────────────────────────────────────
 
-@router.get("/rooms")
+# ANTES: @router.get("/rooms")
+# AHORA: response_model=List[RoomOut] + responses={401} — Action 2 (Listar aulas).
+@router.get("/rooms", response_model=List[RoomOut], responses={401: {"model": ErrorDetail}})
 def list_rooms(
     db: Session = Depends(get_db_sql),
     current_user: User = Depends(get_current_user),
@@ -162,7 +214,14 @@ def get_room(
     return {"id": room.id, "name": room.name, "max_capacity": room.max_capacity, "target_temp": room.target_temp, "control_policy": room.control_policy}
 
 
-@router.put("/rooms/{room_id}/policy")
+# ANTES: @router.put("/rooms/{room_id}/policy")
+# AHORA: response_model=RoomPolicyOut + responses={401,403,404} — Action 13
+# (Política cognitiva del aula).
+@router.put(
+    "/rooms/{room_id}/policy",
+    response_model=RoomPolicyOut,
+    responses={401: {"model": ErrorDetail}, 403: {"model": ErrorDetail}, 404: {"model": ErrorDetail}},
+)
 def update_room_policy(
     room_id: str,
     payload: RoomPolicyIn,
@@ -206,7 +265,14 @@ def reload_model(current_user: User = Depends(get_current_user)):
     return {"engine": engine, "model_loaded": engine == "ml"}
 
 
-@router.post("/rooms", status_code=201)
+# ANTES: @router.post("/rooms", status_code=201)
+# AHORA: response_model=RoomOut + responses={401,403,409} — Action 8 (Crear aula).
+@router.post(
+    "/rooms",
+    status_code=201,
+    response_model=RoomOut,
+    responses={401: {"model": ErrorDetail}, 403: {"model": ErrorDetail}, 409: {"model": ErrorDetail}},
+)
 def create_room(
     payload: RoomCreateIn,
     db: Session = Depends(get_db_sql),
@@ -235,7 +301,13 @@ def create_room(
     return {"id": room.id, "name": room.name, "max_capacity": room.max_capacity, "target_temp": room.target_temp}
 
 
-@router.put("/rooms/{room_id}")
+# ANTES: @router.put("/rooms/{room_id}")
+# AHORA: response_model=RoomOut + responses={401,403,404,409} — Action 9 (Editar aula).
+@router.put(
+    "/rooms/{room_id}",
+    response_model=RoomOut,
+    responses={401: {"model": ErrorDetail}, 403: {"model": ErrorDetail}, 404: {"model": ErrorDetail}, 409: {"model": ErrorDetail}},
+)
 def update_room(
     room_id: str,
     payload: RoomUpdateIn,
@@ -310,7 +382,14 @@ def update_room(
     return {"id": room.id, "name": room.name, "max_capacity": room.max_capacity, "target_temp": room.target_temp}
 
 
-@router.delete("/rooms/{room_id}", status_code=200)
+# ANTES: @router.delete("/rooms/{room_id}", status_code=200)
+# AHORA: se agrega responses={401,403,404} (sin response_model porque el
+# mensaje de éxito de la Action 10 usa el slot {aula}, no el body).
+@router.delete(
+    "/rooms/{room_id}",
+    status_code=200,
+    responses={401: {"model": ErrorDetail}, 403: {"model": ErrorDetail}, 404: {"model": ErrorDetail}},
+)
 def delete_room(
     room_id: str,
     db: Session = Depends(get_db_sql),
@@ -518,7 +597,15 @@ def register_device(
     return {"sensor_id": device.id, "room_id": device.room_id, "is_active": device.is_active, "control_enabled": device.control_enabled}
 
 
-@router.post("/sensors", status_code=201)
+# ANTES: @router.post("/sensors", status_code=201)
+# AHORA: response_model=SensorDeviceOut + responses={401,403,404,409} —
+# Action 11 (Aprovisionar sensor).
+@router.post(
+    "/sensors",
+    status_code=201,
+    response_model=SensorDeviceOut,
+    responses={401: {"model": ErrorDetail}, 403: {"model": ErrorDetail}, 404: {"model": ErrorDetail}, 409: {"model": ErrorDetail}},
+)
 def provision_sensor(
     payload: SensorCreateIn,
     db: Session = Depends(get_db_sql),
@@ -558,7 +645,9 @@ def provision_sensor(
 
 # ── User management endpoints (admin-only) ────────────────────────────────────
 
-@router.get("/users")
+# ANTES: @router.get("/users")
+# AHORA: response_model=List[UserOut] + responses={401,403} — Action 14 (Listar usuarios).
+@router.get("/users", response_model=List[UserOut], responses={401: {"model": ErrorDetail}, 403: {"model": ErrorDetail}})
 def list_users(
     db: Session = Depends(get_db_sql),
     current_user: User = Depends(get_current_user),
@@ -571,7 +660,14 @@ def list_users(
     ]
 
 
-@router.patch("/users/{user_id}/status")
+# ANTES: @router.patch("/users/{user_id}/status")
+# AHORA: response_model=UserOut + responses={400,401,403,404} — Action 14
+# (Aprobar/activar usuario).
+@router.patch(
+    "/users/{user_id}/status",
+    response_model=UserOut,
+    responses={400: {"model": ErrorDetail}, 401: {"model": ErrorDetail}, 403: {"model": ErrorDetail}, 404: {"model": ErrorDetail}},
+)
 def update_user_status(
     user_id: int,
     payload: StatusPatch,
@@ -604,7 +700,10 @@ def update_user_status(
 
 # ── Reservation endpoints ─────────────────────────────────────────────────────
 
-@router.get("/reservations")
+# ANTES: @router.get("/reservations")
+# AHORA: response_model=List[ReservationOut] + responses={401,403} — Action 4
+# (Listar reservas).
+@router.get("/reservations", response_model=List[ReservationOut], responses={401: {"model": ErrorDetail}, 403: {"model": ErrorDetail}})
 def list_reservations(
     db: Session = Depends(get_db_sql),
     current_user: User = Depends(get_current_user),
@@ -627,7 +726,15 @@ def list_reservations(
     ]
 
 
-@router.post("/reservations", status_code=201)
+# ANTES: @router.post("/reservations", status_code=201)
+# AHORA: response_model=ReservationOut + responses={401,403,404,409} — Action 3
+# (Crear reserva). El 409 es clave: significa choque de horario en el aula.
+@router.post(
+    "/reservations",
+    status_code=201,
+    response_model=ReservationOut,
+    responses={401: {"model": ErrorDetail}, 403: {"model": ErrorDetail}, 404: {"model": ErrorDetail}, 409: {"model": ErrorDetail}},
+)
 def create_reservation(
     payload: ReservationIn,
     db: Session = Depends(get_db_sql),
@@ -691,7 +798,14 @@ def create_reservation(
     }
 
 
-@router.delete("/reservations/{reservation_id}", status_code=200)
+# ANTES: @router.delete("/reservations/{reservation_id}", status_code=200)
+# AHORA: se agrega responses={401,403,404} (sin response_model porque el
+# mensaje de éxito de la Action 5 usa el slot {reserva_id}, no el body).
+@router.delete(
+    "/reservations/{reservation_id}",
+    status_code=200,
+    responses={401: {"model": ErrorDetail}, 403: {"model": ErrorDetail}, 404: {"model": ErrorDetail}},
+)
 def delete_reservation(
     reservation_id: int,
     db: Session = Depends(get_db_sql),
@@ -713,7 +827,14 @@ def delete_reservation(
     return {"deleted": reservation_id}
 
 
-@router.put("/reservations/{reservation_id}")
+# ANTES: @router.put("/reservations/{reservation_id}")
+# AHORA: response_model=ReservationOut + responses={401,403,404,409} — Action 6
+# (Editar reserva).
+@router.put(
+    "/reservations/{reservation_id}",
+    response_model=ReservationOut,
+    responses={401: {"model": ErrorDetail}, 403: {"model": ErrorDetail}, 404: {"model": ErrorDetail}, 409: {"model": ErrorDetail}},
+)
 def update_reservation(
     reservation_id: int,
     payload: ReservationIn,

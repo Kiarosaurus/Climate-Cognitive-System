@@ -1,6 +1,8 @@
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+# CAMBIO: antes era "from typing import Optional" — se agregó "List" porque
+# ahora usamos response_model=List[...] en list_readings.
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pymongo.errors import PyMongoError
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -12,6 +14,8 @@ from starlette.concurrency import run_in_threadpool
 from app.core.timeutils import local_now
 from app.models.sensor import SensorReading
 from app.models.admin import SensorDevice, Reservation, User, Room
+# LÍNEA NUEVA — antes este import no existía. Trae el modelo de error compartido.
+from app.models.common import ErrorDetail
 from app.services.data_service import process_reading
 from app.database import get_db
 from app.database_sql import get_db_sql
@@ -19,6 +23,61 @@ from app.dependencies import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+# ============================================================================
+# BLOQUE NUEVO — todas estas clases (CognitiveActionOut, SensorReadingOut,
+# EmergencyEntryOut, EmergenciesOut, SensorControlOut) no existían antes.
+# Antes cada endpoint solo hacía "return {...}" o "return docs" sin declarar
+# la forma de la respuesta, por eso en Watson el panel "Response" salía vacío.
+# ============================================================================
+# Declared so Watson's extension "Response" panel can expose these fields as
+# insertable variables — FastAPI otherwise emits an empty schema for plain
+# dict/list returns, leaving Watson with nothing to map.
+
+class CognitiveActionOut(BaseModel):
+    ac_status: str
+    cooling_mode: Optional[str] = None
+    target: Optional[float] = None
+    thermal_load_offset: Optional[float] = None
+    model: str
+    expected_occupancy: Optional[float] = None
+    actual_occupancy: Optional[float] = None
+    effective_occupancy: Optional[float] = None
+    occupancy_gap: Optional[float] = None
+
+
+class SensorReadingOut(BaseModel):
+    sensor_id: str
+    temperature: float
+    humidity: float
+    co2_ppm: Optional[float] = None
+    co_ppm: float = 0.0
+    camera_occupancy: Optional[int] = None
+    is_simulated: bool = False
+    timestamp: str
+    cognitive_action: Optional[CognitiveActionOut] = None
+
+
+class EmergencyEntryOut(BaseModel):
+    room_id: str
+    room_name: str
+    sensor_id: str
+    co_ppm: float
+    timestamp: Optional[str] = None
+    is_simulated: bool
+
+
+class EmergenciesOut(BaseModel):
+    real: List[EmergencyEntryOut]
+    simulated: List[EmergencyEntryOut]
+
+
+class SensorControlOut(BaseModel):
+    sensor_id: str
+    room_id: Optional[str] = None
+    is_active: bool
+    control_enabled: bool
 
 
 @router.post("/", status_code=201)
@@ -35,7 +94,10 @@ async def ingest_reading(
     return result
 
 
-@router.get("/")
+# ANTES: @router.get("/")
+# AHORA: se agrega response_model=List[SensorReadingOut] — es el endpoint de
+# la Action 1 (Estado del aula) de la guía de Watson.
+@router.get("/", response_model=List[SensorReadingOut])
 async def list_readings(
     room_id: Optional[str] = None,
     sensor_id: Optional[str] = None,
@@ -73,7 +135,10 @@ def _looks_synthetic(sensor_id: str, room_id: str | None) -> bool:
     return any(kw in haystack for kw in _SIM_KEYWORDS)
 
 
-@router.get("/emergencies")
+# ANTES: @router.get("/emergencies")
+# AHORA: se agregan response_model=EmergenciesOut y responses={403:...} — es
+# el endpoint de la Action 7 (Emergencias de CO) de la guía de Watson.
+@router.get("/emergencies", response_model=EmergenciesOut, responses={403: {"model": ErrorDetail}})
 async def get_co_emergencies(
     db: AsyncIOMotorDatabase = Depends(get_db),
     db_sql: Session = Depends(get_db_sql),
@@ -183,7 +248,14 @@ class SensorControlIn(BaseModel):
     control_enabled: bool
 
 
-@router.put("/{sensor_id}/control")
+# ANTES: @router.put("/{sensor_id}/control")
+# AHORA: se agregan response_model=SensorControlOut y responses={401,403,404}
+# — es el endpoint de la Action 12 (Encender/apagar sensor) de la guía.
+@router.put(
+    "/{sensor_id}/control",
+    response_model=SensorControlOut,
+    responses={401: {"model": ErrorDetail}, 403: {"model": ErrorDetail}, 404: {"model": ErrorDetail}},
+)
 def control_sensor(
     sensor_id: str,
     payload: SensorControlIn,
