@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from './AuthContext'
+import api from '../api/client'
 
 export interface EmergencyEntry {
   room_id: string
@@ -59,12 +60,10 @@ export function EmergencyProvider({ children }: { children: React.ReactNode }) {
   const poll = useCallback(async () => {
     if (!canPoll || !token) return
     try {
-      const response = await fetch('/api/v1/sensors/emergencies', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!response.ok) return
-
-      const data = await response.json() as { real: EmergencyEntry[]; simulated: EmergencyEntry[] }
+      // Shared axios client: injects X-API-Key (client.ts) and the Bearer token
+      // (AuthContext interceptor) — a raw fetch here missed the API key and the
+      // router-wide require_api_key gate returned 403, so emergencies never showed.
+      const { data } = await api.get<{ real: EmergencyEntry[]; simulated: EmergencyEntry[] }>('/sensors/emergencies')
 
       const real      = Array.isArray(data?.real)      ? data.real      : []
       const simulated = Array.isArray(data?.simulated) ? data.simulated : []
