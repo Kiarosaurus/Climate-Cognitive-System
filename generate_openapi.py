@@ -158,11 +158,20 @@ def inject_missing_parameters(spec: dict) -> dict:
             
     return spec
 
-# ── Authorization header for Watson actions (JWT passthrough) ────────────────
+# ── JWT header for Watson actions (JWT passthrough) ──────────────────────────
 
 def inject_authorization_header(spec: dict) -> dict:
-    """Expose the Bearer JWT as an EXPLICIT header parameter on every
+    """Expose the raw JWT as an EXPLICIT header parameter on every
     JWT-protected operation.
+
+    ANTES: este parámetro se llamaba "Authorization" (con el valor
+    "Bearer {jwt}"). Watson parecía tratar ese nombre como reservado para su
+    propio manejo de auth de la extension y nunca lo mandaba de verdad, sin
+    importar cómo se configurara el binding — el backend siempre veía el
+    header ausente. AHORA: se usa un nombre propio, "X-Watson-JWT", que no
+    coincide con ningún esquema de seguridad que Watson reconozca, y se manda
+    el JWT crudo (sin el prefijo "Bearer "), que es lo que espera
+    `dependencies.py:_watson_jwt_header`.
 
     Watson's extension auth is a static X-API-Key; it cannot carry a per-user
     token. Actions instead bind this header to the `jwt` session variable
@@ -179,14 +188,15 @@ def inject_authorization_header(spec: dict) -> dict:
             if not needs_jwt:
                 continue
             params = op.setdefault("parameters", [])
-            if any(p.get("name") == "Authorization" and p.get("in") == "header" for p in params):
+            if any(p.get("name") == "X-Watson-JWT" and p.get("in") == "header" for p in params):
                 continue
             params.append({
-                "name": "Authorization",
+                "name": "X-Watson-JWT",
                 "in": "header",
                 "description": (
-                    "Bearer JWT del usuario. En Watson: 'Bearer ' + session "
-                    "variable jwt (la llena POST /chat con el token del widget)."
+                    "JWT crudo del usuario (sin 'Bearer '). En Watson: la "
+                    "variable de sesión jwt directa (la llena POST /chat con "
+                    "el token del widget)."
                 ),
                 "required": False,
                 "schema": {"type": "string"},
