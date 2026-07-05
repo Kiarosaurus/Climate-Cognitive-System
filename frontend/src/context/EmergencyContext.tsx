@@ -19,6 +19,7 @@ interface EmergencyContextType {
   isPopupDismissed: boolean
   dismissPopup: () => void
   reopenPopup: () => void
+  clearSimulated: () => void
 }
 
 const EmergencyContext = createContext<EmergencyContextType>({
@@ -28,6 +29,7 @@ const EmergencyContext = createContext<EmergencyContextType>({
   isPopupDismissed: false,
   dismissPopup: () => {},
   reopenPopup: () => {},
+  clearSimulated: () => {},
 })
 
 export function useEmergency() {
@@ -104,6 +106,14 @@ export function EmergencyProvider({ children }: { children: React.ReactNode }) {
 
   const isEmergency = realEmergencies.length > 0 || simulatedEmergencies.length > 0
 
+  // Instant local wipe of simulated alerts — the dashboard calls this right
+  // after DELETE /sensors/simulated so the orange state drops without waiting
+  // for the next polling cycle.
+  const clearSimulated = useCallback(() => {
+    setSimulatedEmergencies([])
+    prevKeysRef.current = new Set([...prevKeysRef.current].filter(k => !k.endsWith(':true')))
+  }, [])
+
   return (
     <EmergencyContext.Provider
       value={{
@@ -113,6 +123,7 @@ export function EmergencyProvider({ children }: { children: React.ReactNode }) {
         isPopupDismissed,
         dismissPopup: () => setIsPopupDismissed(true),
         reopenPopup: () => setIsPopupDismissed(false),
+        clearSimulated,
       }}
     >
       {children}

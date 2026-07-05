@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
@@ -11,6 +11,7 @@ import {
 import axios from 'axios'
 import api, { getApiErrorDetail } from '../api/client'
 import { useAuth } from '../context/AuthContext'
+import { useEmergency } from '../context/EmergencyContext'
 import type { CombinedReading, ReadingInput } from '../types'
 import {
   MetricCard, StatusLegend, STATUS_TOKENS, type MetricStatus,
@@ -270,13 +271,32 @@ export default function GlobalDashboard() {
     return () => clearInterval(interval)
   }, [mode, autoMode, sendReading])
 
+  // Wipe synthetic data server-side (DELETE /sensors/simulated) and drop the
+  // orange emergency state locally — leaving sim mode must not keep feeding
+  // /emergencies for up to 15 s until the backend purge window expires.
+  const { clearSimulated } = useEmergency()
+  const purgeSimulated = useCallback(() => {
+    api.delete('/sensors/simulated').catch(() => {})
+    clearSimulated()
+  }, [clearSimulated])
+
+  // On unmount (navigating to any other page) while in sim mode: same purge.
+  const modeRef = useRef(mode)
+  useEffect(() => { modeRef.current = mode }, [mode])
+  useEffect(() => () => {
+    if (modeRef.current === 'sim') purgeSimulated()
+  }, [purgeSimulated])
+
   // Switch source. Never mix real and synthetic buffers — clear on every transition.
   const switchMode = useCallback((next: 'real' | 'sim') => {
     if (next === mode) return
     setMode(next)
     setReadings([])
-    if (next === 'real') setAutoMode(false)
-  }, [mode])
+    if (next === 'real') {
+      setAutoMode(false)
+      purgeSimulated()
+    }
+  }, [mode, purgeSimulated])
 
   // Manual send forces Simulación (sending test data is inherently a sim action).
   const handleManualSend = useCallback(() => {

@@ -89,24 +89,24 @@ export default function Layout() {
   }, [isAnyVisible, isPopupDismissed, dismissPopup])
   const affectedRooms  = activeEntries.map(e => e.room_name).join(', ')
 
-  // Theming tokens
-  const overlayBg      = showReal ? 'bg-red-600/15'   : 'bg-orange-500/15'
-  const badgeColor     = showReal ? 'text-red-400'    : 'text-amber-400'
+  // Theming tokens — real = red, simulation = orange (clearly distinct hues).
+  const overlayBg      = showReal ? 'bg-red-600/20'   : 'bg-orange-500/20'
+  const badgeColor     = showReal ? 'text-red-400'    : 'text-orange-400'
   const badgeText      = showReal ? 'Alerta CO activa' : 'Simulación de CO activa'
   const iconBg         = showReal ? 'bg-red-600 hover:bg-red-500 shadow-red-900/50'
-                                  : 'bg-amber-600 hover:bg-amber-500 shadow-amber-900/50'
+                                  : 'bg-orange-600 hover:bg-orange-500 shadow-orange-900/50'
   const tooltipText    = showReal
     ? `⚠ Peligro CO — Evacuar: ${affectedRooms}`
     : `🛠️ Simulación de CO activa`
 
-  const modalBg        = showReal ? 'bg-red-950 border-red-500'   : 'bg-amber-950 border-amber-500'
-  const modalHeaderBdr = showReal ? 'border-red-800'              : 'border-amber-800'
-  const modalIconColor = showReal ? 'text-red-400'                : 'text-amber-400'
-  const modalTitleColor= showReal ? 'text-red-200'                : 'text-amber-200'
+  const modalBg        = showReal ? 'bg-red-950 border-red-500'   : 'bg-orange-950 border-orange-500'
+  const modalHeaderBdr = showReal ? 'border-red-800'              : 'border-orange-800'
+  const modalIconColor = showReal ? 'text-red-400'                : 'text-orange-400'
+  const modalTitleColor= showReal ? 'text-red-200'                : 'text-orange-200'
   const modalRowBg     = showReal ? 'bg-red-900/50 border-red-700 divide-red-800'
-                                  : 'bg-amber-900/30 border-amber-700 divide-amber-800'
-  const modalPpmColor  = showReal ? 'bg-red-700/60 text-red-200'  : 'bg-amber-700/60 text-amber-200'
-  const modalBtnBg     = showReal ? 'bg-red-600 hover:bg-red-500' : 'bg-amber-600 hover:bg-amber-500'
+                                  : 'bg-orange-900/30 border-orange-700 divide-orange-800'
+  const modalPpmColor  = showReal ? 'bg-red-700/60 text-red-200'  : 'bg-orange-700/60 text-orange-200'
+  const modalBtnBg     = showReal ? 'bg-red-600 hover:bg-red-500' : 'bg-orange-600 hover:bg-orange-500'
 
   const modalTitle = showReal
     ? '¡Alerta Crítica!'
@@ -120,9 +120,9 @@ export default function Layout() {
         detectados en las siguientes aulas:
       </>
     : <>
-        Se ha detectado un pico <span className="font-bold text-amber-300">sintético</span> de CO
+        Se ha detectado un pico <span className="font-bold text-orange-300">sintético</span> de CO
         en las siguientes aulas. Esta alerta es una{' '}
-        <span className="font-bold text-amber-300">prueba del sistema cognitivo</span> y
+        <span className="font-bold text-orange-300">prueba del sistema cognitivo</span> y
         desaparecerá al cambiar de pestaña.
       </>
 
@@ -130,7 +130,7 @@ export default function Layout() {
     ? '🚨 Inicie el protocolo de evacuación inmediatamente.'
     : '✅ No se requiere ninguna acción. Esta es una simulación de laboratorio.'
 
-  const modalFooterColor = showReal ? 'text-red-200 border-red-800' : 'text-amber-200 border-amber-800'
+  const modalFooterColor = showReal ? 'text-red-200 border-red-800' : 'text-orange-200 border-orange-800'
 
   function handleGoToLogin() {
     clearSessionExpired()
@@ -172,10 +172,13 @@ export default function Layout() {
         </div>
       )}
 
-      {/* ── Overlay tint — only when an emergency is visible ── */}
+      {/* ── Overlay tint — only when an emergency is visible ──
+          z-[55]: above the navbar (z-50) and sidebar (z-40) so the whole UI
+          shifts hue, below the modals (z-[60]). Plain alpha blend — the old
+          mix-blend-color-dodge was nearly invisible over the dark navbar. */}
       {isAnyVisible && (
         <div
-          className={`fixed inset-0 pointer-events-none ${overlayBg} mix-blend-color-dodge z-40 transition-colors duration-1000`}
+          className={`fixed inset-0 pointer-events-none ${overlayBg} z-[55] transition-colors duration-1000`}
         />
       )}
 

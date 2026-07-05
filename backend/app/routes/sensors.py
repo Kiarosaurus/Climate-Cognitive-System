@@ -124,6 +124,29 @@ async def list_readings(
     return docs
 
 
+@router.delete("/simulated", status_code=200, responses={403: {"model": ErrorDetail}})
+async def purge_simulated_readings(
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete ALL simulated readings immediately.
+
+    Called by the dashboard when leaving simulation mode (switch to real data
+    or navigating away) so synthetic CO spikes stop feeding /emergencies at
+    once, instead of waiting for the 15-second purge window.
+    """
+    if current_user.role not in ("admin", "collaborator"):
+        raise HTTPException(status_code=403, detail="Admin or collaborator role required.")
+    try:
+        result = await db["sensor_readings"].delete_many({"is_simulated": True})
+    except PyMongoError as exc:
+        logger.error("MongoDB unavailable purging simulated readings: %s", exc)
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+    if result.deleted_count:
+        logger.info("Purged %d simulated readings ('%s').", result.deleted_count, current_user.username)
+    return {"deleted": result.deleted_count}
+
+
 # ── Emergency monitor ────────────────────────────────────────────────────────
 
 _SIM_KEYWORDS = ("SIM", "TEST")
