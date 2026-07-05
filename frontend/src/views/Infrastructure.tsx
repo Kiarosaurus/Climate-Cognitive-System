@@ -762,7 +762,7 @@ export default function Infrastructure() {
 
       {/* ── Modal: Confirmar edición de aula ──────────────────────────────── */}
       {editRoomModalOpen && pendingRoom && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl">
 
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
@@ -869,7 +869,7 @@ export default function Infrastructure() {
 
       {/* ── Modal: Eliminar Aula ──────────────────────────────────────────── */}
       {deleteRoomModalOpen && editRoomId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
           <div className="bg-slate-900 border border-red-900/60 rounded-2xl shadow-2xl w-full max-w-lg">
 
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
@@ -954,7 +954,7 @@ export default function Infrastructure() {
 
       {/* ── Modal: Confirmar reasignación de sensor ───────────────────────── */}
       {editSensorModalOpen && pendingSensor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl">
 
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
@@ -1015,7 +1015,7 @@ export default function Infrastructure() {
 
       {/* ── Modal: Eliminar Sensor ────────────────────────────────────────── */}
       {deleteSensorModalOpen && editSensorId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
           <div className="bg-slate-900 border border-red-900/60 rounded-2xl shadow-2xl w-full max-w-md">
 
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
@@ -1077,7 +1077,7 @@ export default function Infrastructure() {
 
       {/* ── Modal: Herencia de huérfanos al registrar aula ───────────────── */}
       {orphanWarningOpen && orphanData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
           <div className="bg-slate-900 border border-amber-700/60 rounded-2xl shadow-2xl w-full max-w-lg">
 
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">

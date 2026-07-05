@@ -504,7 +504,7 @@ export default function Reservations() {
 
       {/* ── Confirmation modal ────────────────────────────────────────────── */}
       {isModalOpen && pendingEditData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl">
 
             {/* Modal header */}
@@ -597,7 +597,7 @@ export default function Reservations() {
 
       {/* ── Modal: Eliminar Reserva ───────────────────────────────────────── */}
       {deleteModalOpen && selectedId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
           <div className="bg-slate-900 border border-red-900/60 rounded-2xl shadow-2xl w-full max-w-md">
 
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
