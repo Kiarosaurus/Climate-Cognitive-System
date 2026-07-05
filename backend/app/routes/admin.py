@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
-from app.core.timeutils import to_local
+from app.core.timeutils import ensure_local, to_local
 from app.database import get_db
 from app.database_sql import get_db_sql
 from app.models.admin import Room, Schedule, SensorDevice, Reservation, User, STATUSES, CONTROL_POLICIES
@@ -754,9 +754,11 @@ def create_reservation(
     if not db.query(Room).filter(Room.id == payload.room_id).first():
         raise HTTPException(status_code=404, detail=f"Room id={payload.room_id} not found.")
 
-    # Strip tz so it matches the naive DateTime column in PostgreSQL
-    start = payload.start_time.replace(tzinfo=None) if payload.start_time.tzinfo else payload.start_time
-    end = payload.end_time.replace(tzinfo=None) if payload.end_time.tzinfo else payload.end_time
+    # Normalize to naive LOCAL wall-clock (America/Lima) so it matches the
+    # naive DateTime column in PostgreSQL — tz-aware input is shifted, never
+    # just stripped (see app.core.timeutils.ensure_local).
+    start = ensure_local(payload.start_time)
+    end = ensure_local(payload.end_time)
 
     if end <= start:
         raise HTTPException(status_code=400, detail="end_time must be after start_time.")
@@ -859,8 +861,8 @@ def update_reservation(
     if not db.query(Room).filter(Room.id == payload.room_id).first():
         raise HTTPException(status_code=404, detail=f"Room id={payload.room_id} not found.")
 
-    start = payload.start_time.replace(tzinfo=None) if payload.start_time.tzinfo else payload.start_time
-    end = payload.end_time.replace(tzinfo=None) if payload.end_time.tzinfo else payload.end_time
+    start = ensure_local(payload.start_time)
+    end = ensure_local(payload.end_time)
 
     if end <= start:
         raise HTTPException(status_code=400, detail="end_time must be after start_time.")

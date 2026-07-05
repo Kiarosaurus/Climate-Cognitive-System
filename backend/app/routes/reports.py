@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.core.timeutils import local_now, to_local
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.admin import User
@@ -56,7 +57,7 @@ def _simulate_roi() -> dict:
     cognitive system keeping the AC in STANDBY 60% of that time.
     Response includes 'simulated: true' so the frontend renders the amber banner.
     """
-    today = datetime.utcnow().date()
+    today = local_now().date()
     trend_data = []
     total_traditional = total_cognitive = 0.0
 
@@ -145,11 +146,15 @@ async def get_roi(
     n         = len(docs)
     interval_h = (span_h / (n - 1)) if span_h > 0 else DEFAULT_INTERVAL_H
 
-    # ── Group by calendar date ────────────────────────────────────────────────
+    # ── Group by LOCAL calendar date ──────────────────────────────────────────
+    # Timestamps are stored naive UTC; slicing the raw string would split days
+    # at 19:00 Lima. Shift to local wall-clock before taking the date.
     by_day: dict[str, list] = defaultdict(list)
     for doc in docs:
-        date_key = doc.get("timestamp", "")[:10]   # "YYYY-MM-DD"
-        by_day[date_key].append(doc)
+        ts = _parse_ts(doc.get("timestamp", ""))
+        if ts is None:  # already filtered above; guard for the type checker
+            continue
+        by_day[to_local(ts).date().isoformat()].append(doc)
 
     # ── Compute per-day and aggregate totals ──────────────────────────────────
     trend_data: list[dict] = []

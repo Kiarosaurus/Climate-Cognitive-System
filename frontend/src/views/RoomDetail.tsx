@@ -225,6 +225,12 @@ const formatClock = (iso: string) =>
     hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit',
   })
 
+// Sensor reading timestamps are stored as naive UTC ("YYYY-MM-DDTHH:MM:SS.ffffff").
+// Force UTC parse so the browser renders them in local (Lima) time — same rule as
+// GlobalDashboard's parseTs.
+const parseUtcTs = (ts: string) =>
+  new Date(/(Z|[+-]\d\d:?\d\d)$/.test(ts) ? ts : `${ts}Z`)
+
 function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: TimelineRow }> }) {
   if (!active || !payload?.length) return null
   const row = payload[0].payload
@@ -887,7 +893,7 @@ export default function RoomDetail() {
                       {r.cognitive_action?.ac_status ?? '—'}
                     </span>
                   </td>
-                  <td className="py-2 text-slate-400 text-xs">{new Date(r.timestamp).toLocaleString('es')}</td>
+                  <td className="py-2 text-slate-400 text-xs">{parseUtcTs(r.timestamp).toLocaleString('es')}</td>
                 </tr>
               ))}
             </tbody>

@@ -185,11 +185,14 @@ export default function Reservations() {
     if (!form.room_id) return
     if (activeTab === 'edit' && !selectedId) return
 
-    const toISO = (local: string) => new Date(local).toISOString()
+    // Send naive local wall-clock (America/Lima) — the backend stores these
+    // verbatim. Converting to UTC (.toISOString()) here used to shift every
+    // reservation +5 h.
+    const toNaiveLocal = (local: string) => (local.length === 16 ? `${local}:00` : local)
     const payload: EditPayload = {
       room_id: String(form.room_id),
-      start_time: toISO(form.start_time),
-      end_time: toISO(form.end_time),
+      start_time: toNaiveLocal(form.start_time),
+      end_time: toNaiveLocal(form.end_time),
       expected_occupancy: Number(form.expected_occupancy),
     }
 
@@ -553,12 +556,12 @@ export default function Reservations() {
                 <DataRow
                   label="Inicio"
                   value={formatDt(pendingEditData.payload.start_time)}
-                  changed={pendingEditData.payload.start_time !== new Date(pendingEditData.original.start_time).toISOString()}
+                  changed={pendingEditData.payload.start_time.slice(0, 16) !== pendingEditData.original.start_time.slice(0, 16)}
                 />
                 <DataRow
                   label="Fin"
                   value={formatDt(pendingEditData.payload.end_time)}
-                  changed={pendingEditData.payload.end_time !== new Date(pendingEditData.original.end_time).toISOString()}
+                  changed={pendingEditData.payload.end_time.slice(0, 16) !== pendingEditData.original.end_time.slice(0, 16)}
                 />
                 <DataRow
                   label="Ocupantes"

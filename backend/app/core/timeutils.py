@@ -28,3 +28,17 @@ def to_local(dt: datetime) -> datetime:
 def local_now() -> datetime:
     """Current naive LOCAL wall-clock time."""
     return to_local(datetime.now(timezone.utc))
+
+
+def ensure_local(dt: datetime) -> datetime:
+    """Incoming API datetime → naive LOCAL wall-clock datetime.
+
+    Naive input is trusted as already-local wall-clock and returned as-is.
+    tz-aware input (e.g. an ISO string ending in 'Z' or '+00:00') is first
+    normalized to UTC and then shifted into local — a bare
+    .replace(tzinfo=None) would mislabel the UTC wall-clock as local and
+    store reservations |offset| hours in the future.
+    """
+    if dt.tzinfo is None:
+        return dt
+    return to_local(dt.astimezone(timezone.utc))
