@@ -1,6 +1,12 @@
+import time
 import logging
 from starlette.concurrency import run_in_threadpool
 from app.config import WATSON_API_KEY, WATSON_URL, WATSON_ASSISTANT_ID
+
+# Cuántas veces continuamos con input vacío para recoger el texto que Watson
+# dejó pendiente tras un turno "pause", y el tope de espera por cada pausa.
+_MAX_CONTINUATIONS = 3
+_MAX_PAUSE_SECONDS = 3.0
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +43,24 @@ def _create_session_sync() -> str:
     return result["session_id"]
 
 
+def _texts_from(generics: list) -> list[str]:
+    # Junta TODOS los fragmentos de tipo "text" del turno, sin importar en qué
+    # posición vengan (antes solo miraba generics[0] y se perdía la respuesta
+    # real si Watson mandaba una pausa/opciones antes del texto).
+    return [g.get("text") for g in generics if g.get("response_type") == "text" and g.get("text")]
+
+
+def _pause_seconds(generics: list) -> float | None:
+    # Si el turno solo trae "pause" (el "escribiendo…" que Watson manda mientras
+    # resuelve un callout de extensión) y NADA de texto, devuelve cuánto esperar
+    # antes de pedir la continuación. None si no hay ninguna pausa que seguir.
+    pauses = [g for g in generics if g.get("response_type") == "pause"]
+    if not pauses:
+        return None
+    ms = max((g.get("time") or 0) for g in pauses)
+    return min(ms / 1000.0, _MAX_PAUSE_SECONDS)
+
+
 def _send_message_sync(session_id: str, text: str, skill_variables: dict | None = None) -> str:
     kwargs: dict = {}
     if skill_variables:
@@ -48,33 +72,50 @@ def _send_message_sync(session_id: str, text: str, skill_variables: dict | None 
         kwargs["context"] = {
             "skills": {"actions skill": {"skill_variables": skill_variables}}
         }
+    user_id = (skill_variables or {}).get("username") or "ccs_anonymous"
+
     response = _client.message(
         assistant_id=WATSON_ASSISTANT_ID,
         environment_id=WATSON_ASSISTANT_ID,
         session_id=session_id,
         input={"message_type": "text", "text": text},
-        user_id=(skill_variables or {}).get("username") or "ccs_anonymous",
+        user_id=user_id,
         **kwargs,
     ).get_result()
-
-    # ANTES: solo miraba generics[0] — si Watson mandaba cualquier otra cosa
-    # (pausa, opciones, etc.) antes del texto, se perdía la respuesta real
-    # aunque la action sí la hubiera calculado bien.
-    # AHORA: junta TODOS los fragmentos de tipo "text" del turno, sin importar
-    # en qué posición vengan.
     generics = response.get("output", {}).get("generic", [])
-    texts = [g.get("text") for g in generics if g.get("response_type") == "text" and g.get("text")]
+    texts = _texts_from(generics)
+
+    # Watson parte la respuesta cuando un paso hace un callout de extensión:
+    # manda un turno con SOLO "pause" (typing) y el texto real llega en el
+    # siguiente turno. ANTES eso caía a "No hubo respuesta de Watson." y el
+    # usuario tenía que reescribir el mismo mensaje para verlo. AHORA, mientras
+    # el turno venga sin texto pero con una pausa, continuamos con input vacío
+    # (no re-dispara la action ni el callout) para recoger lo pendiente.
+    attempts = 0
+    while not texts and attempts < _MAX_CONTINUATIONS:
+        wait = _pause_seconds(generics)
+        if wait is None:
+            break  # turno vacío sin pausa: no hay nada pendiente que recoger
+        if wait:
+            time.sleep(wait)
+        attempts += 1
+        response = _client.message(
+            assistant_id=WATSON_ASSISTANT_ID,
+            environment_id=WATSON_ASSISTANT_ID,
+            session_id=session_id,
+            input={"message_type": "text", "text": ""},
+            user_id=user_id,
+            **kwargs,
+        ).get_result()
+        generics = response.get("output", {}).get("generic", [])
+        texts = _texts_from(generics)
+
     if texts:
         return "\n".join(texts)
 
-    # DIAGNÓSTICO: el turno llegó SIN ningún fragmento de tipo "text". Watson sí
-    # respondió (típicamente un "pause"/typing mientras resuelve un callout de
-    # extensión, o un response_type distinto). Logueamos qué tipos vinieron y el
-    # response completo para saber exactamente cómo cambiar el filtro de arriba.
-    seen_types = [g.get("response_type") for g in generics]
     logger.warning(
-        "Watson devolvió un turno SIN texto. response_types=%s | generic=%s | output=%s",
-        seen_types, generics, response.get("output", {}),
+        "Watson devolvió un turno SIN texto tras %d continuación(es). response_types=%s | output=%s",
+        attempts, [g.get("response_type") for g in generics], response.get("output", {}),
     )
     return "No hubo respuesta de Watson."
 
