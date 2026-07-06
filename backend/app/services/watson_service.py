@@ -113,11 +113,20 @@ def _send_message_sync(session_id: str, text: str, skill_variables: dict | None 
     if texts:
         return "\n".join(texts)
 
+    # DIAGNÓSTICO TEMPORAL: como no hay acceso a los logs del servidor, exponemos
+    # en el propio chat qué mandó Watson en el turno vacío, para saber si es un
+    # "pause", otro response_type, o un turno totalmente vacío. Quitar una vez
+    # identificado el response_type y ampliado el filtro de _texts_from().
+    seen_types = [g.get("response_type") for g in generics]
     logger.warning(
         "Watson devolvió un turno SIN texto tras %d continuación(es). response_types=%s | output=%s",
-        attempts, [g.get("response_type") for g in generics], response.get("output", {}),
+        attempts, seen_types, response.get("output", {}),
     )
-    return "No hubo respuesta de Watson."
+    return (
+        "No hubo respuesta de Watson. "
+        f"[DEBUG cont={attempts} types={seen_types} "
+        f"generic={str(generics)[:400]}]"
+    )
 
 
 # ── public async API ──────────────────────────────────────────────────────────
