@@ -66,6 +66,16 @@ def _send_message_sync(session_id: str, text: str, skill_variables: dict | None 
     texts = [g.get("text") for g in generics if g.get("response_type") == "text" and g.get("text")]
     if texts:
         return "\n".join(texts)
+
+    # DIAGNÓSTICO: el turno llegó SIN ningún fragmento de tipo "text". Watson sí
+    # respondió (típicamente un "pause"/typing mientras resuelve un callout de
+    # extensión, o un response_type distinto). Logueamos qué tipos vinieron y el
+    # response completo para saber exactamente cómo cambiar el filtro de arriba.
+    seen_types = [g.get("response_type") for g in generics]
+    logger.warning(
+        "Watson devolvió un turno SIN texto. response_types=%s | generic=%s | output=%s",
+        seen_types, generics, response.get("output", {}),
+    )
     return "No hubo respuesta de Watson."
 
 
