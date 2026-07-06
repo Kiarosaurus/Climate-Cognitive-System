@@ -4,9 +4,12 @@ from starlette.concurrency import run_in_threadpool
 from app.config import WATSON_API_KEY, WATSON_URL, WATSON_ASSISTANT_ID
 
 # Cuántas veces continuamos con input vacío para recoger el texto que Watson
-# dejó pendiente tras un turno "pause", y el tope de espera por cada pausa.
+# dejó pendiente cuando el turno vuelve sin texto (turno vacío o solo "pause").
 _MAX_CONTINUATIONS = 3
 _MAX_PAUSE_SECONDS = 3.0
+# Espera corta antes de continuar un turno vacío (generic=[]), que no trae un
+# tiempo de pausa propio, para darle margen al callout de la extensión.
+_EMPTY_TURN_WAIT = 0.6
 
 logger = logging.getLogger(__name__)
 
@@ -86,18 +89,17 @@ def _send_message_sync(session_id: str, text: str, skill_variables: dict | None 
     texts = _texts_from(generics)
 
     # Watson parte la respuesta cuando un paso hace un callout de extensión:
-    # manda un turno con SOLO "pause" (typing) y el texto real llega en el
-    # siguiente turno. ANTES eso caía a "No hubo respuesta de Watson." y el
-    # usuario tenía que reescribir el mismo mensaje para verlo. AHORA, mientras
-    # el turno venga sin texto pero con una pausa, continuamos con input vacío
+    # devuelve un turno SIN texto (observado: generic=[] totalmente vacío, o a
+    # veces solo un "pause"/typing) y el texto real llega en el siguiente turno.
+    # ANTES eso caía a "No hubo respuesta de Watson." y el usuario tenía que
+    # reescribir el mismo mensaje para verlo. AHORA continuamos con input vacío
     # (no re-dispara la action ni el callout) para recoger lo pendiente.
     attempts = 0
     while not texts and attempts < _MAX_CONTINUATIONS:
+        # Un turno "pause" trae su propio tiempo de espera; un turno vacío no,
+        # así que usamos una espera corta para dar margen al callout.
         wait = _pause_seconds(generics)
-        if wait is None:
-            break  # turno vacío sin pausa: no hay nada pendiente que recoger
-        if wait:
-            time.sleep(wait)
+        time.sleep(wait if wait is not None else _EMPTY_TURN_WAIT)
         attempts += 1
         response = _client.message(
             assistant_id=WATSON_ASSISTANT_ID,
@@ -109,6 +111,11 @@ def _send_message_sync(session_id: str, text: str, skill_variables: dict | None 
         ).get_result()
         generics = response.get("output", {}).get("generic", [])
         texts = _texts_from(generics)
+        # Si el turno ya trae contenido real que NO es texto (option,
+        # user_defined, etc.) y tampoco es una pausa, no hay texto que recoger
+        # por esta vía: cortamos para no insistir de más.
+        if not texts and generics and _pause_seconds(generics) is None:
+            break
 
     if texts:
         return "\n".join(texts)
